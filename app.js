@@ -243,7 +243,10 @@ async function loadMany(kind, ids, t, raw = false) {
         result.push({ id, rows });
         done++;
         if (done % 50 === 0 && t === token) {
-          const e = $("load-progress");
+          const e =
+            $("load-progress") ||
+            $("brand-load-progress") ||
+            $("brand-price-progress");
           if (e) e.textContent = `正在加载 ${done} / ${ids.length} 个类目…`;
         }
       }
@@ -1138,7 +1141,7 @@ async function brandPage(t) {
     .join("");
   let categoryParts = parts;
   if (parts.some((p) => p.id.startsWith("scope_"))) {
-    if (!brandCategoryIndex && manifest.brandIndex)
+    if (!brandCategoryIndex && manifest.brandIndex && ids().length > 12)
       brandCategoryIndex = await jsonFile(
         "./data/" + manifest.brandIndex,
         activeController.signal,
@@ -1196,7 +1199,7 @@ async function brandPage(t) {
     section(
       "品牌价格带",
       "同一筛选范围，来自商品月度数据；与品牌汇总表分别核对",
-      '<div id="brand-prices"><p class="loading">正在加载价格结构…</p></div>',
+      '<div id="brand-prices"><p class="loading" id="brand-price-progress">正在加载价格结构…</p></div>',
     );
   addBars();
   const bp = await loadMany("brandprice", ids(), t);
@@ -1640,7 +1643,10 @@ function setupAnalysisWorker() {
     const job = analysisJobs.get(m.id);
     if (!job) return;
     if (m.progress != null) {
-      const e = $("load-progress");
+      const e =
+        $("load-progress") ||
+        $("brand-load-progress") ||
+        $("brand-price-progress");
       if (e)
         e.textContent = `正在加载与计算 ${m.progress} / ${m.total} 个数据分片…`;
       return;
@@ -1931,14 +1937,14 @@ async function brandFast(t) {
     section(
       "品牌深挖",
       `品牌份额针对所选 ${ids().length} 个三级类目，不代表品牌全市场份额`,
-      `<div class="toolbar"><label>搜索品牌 <input type="search" id="brand-search" value="${esc(S.brandSearch || "")}" placeholder="输入品牌关键词"></label><button data-action="brand-search">搜索</button><label>正在看的品牌 <select id="brand-select">${opts}</select></label><small>完整品牌池搜索，最多显示150个选项</small></div><div class="stats">${unitStat("GMV（退后）", money(brand.g), "同比 " + pct(prev ? yoy(brand.g, prev.g) : null))}${unitStat("市占率", con.cr5 != null ? pct(ratio(brand.g, total.g)) : "待对账")}${unitStat("品牌排名", brand.rank + " / " + d.knownCount)}${unitStat("件均价", "¥" + num(ratio(brand.g, brand.q)))}</div><div id="brand-analysis"><p class="loading">正在加载该品牌的类目、平台与趋势…</p></div>`,
+      `<div class="toolbar"><label>搜索品牌 <input type="search" id="brand-search" value="${esc(S.brandSearch || "")}" placeholder="输入品牌关键词"></label><button data-action="brand-search">搜索</button><label>正在看的品牌 <select id="brand-select">${opts}</select></label><small>完整品牌池搜索，最多显示150个选项</small></div><div class="stats">${unitStat("GMV（退后）", money(brand.g), "同比 " + pct(prev ? yoy(brand.g, prev.g) : null))}${unitStat("市占率", con.cr5 != null ? pct(ratio(brand.g, total.g)) : "待对账")}${unitStat("品牌排名", brand.rank + " / " + d.knownCount)}${unitStat("件均价", "¥" + num(ratio(brand.g, brand.q)))}</div><div id="brand-analysis"><p class="loading" id="brand-load-progress">正在加载该品牌的类目、平台与趋势…</p></div>`,
     ) +
     section(
       "品牌价格带",
       "按当前所选时段、平台、类目计算；商品来源与品牌来源分别对账",
-      '<div id="brand-prices"><p class="loading">正在加载价格结构…</p></div>',
+      '<div id="brand-prices"><p class="loading" id="brand-price-progress">正在加载价格结构…</p></div>',
     );
-  if (!brandCategoryIndex && manifest.brandIndex)
+  if (!brandCategoryIndex && manifest.brandIndex && ids().length > 12)
     brandCategoryIndex = await jsonFile(
       "./data/" + manifest.brandIndex,
       activeController.signal,
@@ -2000,7 +2006,7 @@ async function brandFast(t) {
       ]),
     )}`;
   addBars();
-  const price = await analyze("price", relevant, { brand: S.brand });
+  const price = await analyze("price", ids(), { brand: S.brand });
   if (t !== token) return;
   const pg = price.bins.reduce((s, r) => s + r.g, 0),
     bins = new Map(price.bins.map((r) => [r.name, r]));
