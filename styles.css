@@ -568,3 +568,7 @@ body:has(main[aria-busy="true"]) .range::after {
   content: " · 正在更新当前筛选结果…";
   color: var(--accent);
 }
+
+#controls[inert] {
+  opacity: 0.65;
+}

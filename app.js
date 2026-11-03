@@ -90,6 +90,7 @@ if (globalThis.PerformanceObserver) {
 }
 const leaderCache = new Map();
 const insightCache = new Map();
+let initialInsightPromise = null;
 const fileCache = new Map(),
   exportTables = new Map();
 let toastTimer,
@@ -757,10 +758,10 @@ async function overview(t) {
     if (insightPath) {
       let summary = insightCache.get(S.end);
       if (!summary) {
-        summary = await jsonFile(
-          "./data/" + insightPath,
-          activeController.signal,
-        );
+        summary =
+          t === 1 && initialInsightPromise
+            ? await initialInsightPromise
+            : await jsonFile("./data/" + insightPath, activeController.signal);
         insightCache.set(S.end, summary);
         while (insightCache.size > 3)
           insightCache.delete(insightCache.keys().next().value);
@@ -1252,7 +1253,7 @@ async function render() {
   for (const job of analysisJobs.values())
     job.reject(new DOMException("请求已取消", "AbortError"));
   analysisJobs.clear();
-  dataWorker?.postMessage({ type: "cancel" });
+  if (token > 0) dataWorker?.postMessage({ type: "cancel" });
   activeController.abort();
   activeController = new AbortController();
   pendingFiles = new Map();
@@ -1538,7 +1539,6 @@ function setupWorker() {
     metricsWorker.terminate();
     metricsWorker = null;
   };
-  metricsWorker.postMessage({ type: "init", rows: industry.rows });
 }
 async function calcMetricsAsync() {
   if (!metricsWorker) return calcMetrics();
@@ -1587,12 +1587,29 @@ async function boot() {
   try {
     setupDataWorker();
     setupAnalysisWorker();
+    setupWorker();
     manifest = await jsonFile("./data/manifest.json?version=" + Date.now());
+    const initialEnd = Math.min(
+      manifest.last,
+      Math.max(manifest.first, S.end || manifest.last),
+    );
+    if (
+      (location.hash.slice(1) || S.view) === "overview" &&
+      manifest.insights?.[initialEnd]
+    ) {
+      initialInsightPromise = jsonFile(
+        "./data/" + manifest.insights[initialEnd],
+      ).then((data) => {
+        insightCache.set(initialEnd, data);
+        return data;
+      });
+      initialInsightPromise.catch(() => {});
+    }
     industry = await jsonFile("./data/" + manifest.industry);
     categories = industry.categories;
     catMap = new Map(categories.map((c) => [c.id, c]));
     index = indexIndustry(industry.rows);
-    setupWorker();
+    metricsWorker?.postMessage({ type: "init", rows: industry.rows });
     S.end = Math.min(
       manifest.last,
       Math.max(manifest.first, S.end || manifest.last),
@@ -1603,6 +1620,7 @@ async function boot() {
     if (views.some((x) => x[0] === v)) S.view = v;
     $("footer").textContent =
       `久谦数据 · ${manifest.version} · ${categories.length}个三级类目 · 最近成功数据生成 ${manifest.built}（北京时间）`;
+    $("controls").removeAttribute("inert");
     await render();
     document.body.dataset.initialDataMs = (
       performance.now() - bootStarted
