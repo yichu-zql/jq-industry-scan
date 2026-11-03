@@ -14,6 +14,7 @@ for (const kind of ["brand", "price", "brandprice"])
 const paths = [
   m.industry,
   m.brandIndex,
+  ...Object.values(m.brandDetails || {}).flatMap(o=>Object.values(o)),
   ...Object.values(m.leaders || {}),
   ...Object.values(m.priceLeaders || {}),
   ...Object.values(m.insights || {}),

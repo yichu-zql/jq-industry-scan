@@ -2,18 +2,18 @@
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
-    <meta name="app-version" content="2.1.0" />
+    <meta name="app-version" content="2.1.1" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="color-scheme" content="light dark" />
-    <title>久谦·行业品类品牌趋势看板V2.1.0</title>
-    <link rel="stylesheet" href="./styles.css?v=2.1.0" />
+    <title>久谦·行业品类品牌趋势看板V2.1.1</title>
+    <link rel="stylesheet" href="./styles.css?v=2.1.1" />
   </head>
   <body>
     <div class="wrap">
       <div class="global-top">
         <header>
           <div>
-            <h1>久谦·行业品类品牌趋势看板<span>V2.1.0</span></h1>
+            <h1>久谦·行业品类品牌趋势看板<span>V2.1.1</span></h1>
             <p>从行业结构，到增长品类，再到品牌竞争</p>
           </div>
         </header>
@@ -43,10 +43,13 @@
                 type="search"
                 placeholder="搜索一级、二级或三级类目"
                 aria-label="搜索类目"
-              /><button id="cat-all">全选</button
+              /><button id="cat-all">选中行业全部</button
               ><button id="cat-clear">清空</button
               ><button id="cat-done">完成</button>
             </div>
+            <p class="note">
+              仅支持同一一级类目内多选；选择另一行业会替换当前选择，勾选后立即生效。
+            </p>
             <div id="category-tree"></div>
           </div>
           <div class="range" id="range"></div>
@@ -58,6 +61,6 @@
       <footer id="footer"></footer>
     </div>
     <div id="toast" role="status" hidden></div>
-    <script type="module" src="./app.js?v=2.1.0"></script>
+    <script type="module" src="./app.js?v=2.1.1"></script>
   </body>
 </html>

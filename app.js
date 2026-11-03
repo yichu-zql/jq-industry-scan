@@ -7,7 +7,8 @@ import {
   compactTableBody,
   installViewportTableHeaders,
   COLORS,
-} from "./lib/presentation.js";
+  brandColor,
+} from "./lib/presentation.js?v=2.1.1";
 const VERSION = document.querySelector('meta[name="app-version"]').content;
 import {
   PLATFORMS,
@@ -123,6 +124,7 @@ let S = {
   start: 0,
   plats: [0, 1, 2],
   cats: null,
+  overviewRoots: null,
   expanded: [],
   only: true,
   matrix: null,
@@ -265,10 +267,26 @@ async function loadMany(kind, ids, t, raw = false) {
   );
   return result;
 }
-function ids() {
+function globalIds() {
   return S.cats === null
     ? categories.map((c) => c.id)
     : S.cats.filter((id) => catMap.has(id));
+}
+function ids() {
+  const list = globalIds();
+  return S.view === "overview" && S.overviewRoots !== null
+    ? list.filter((id) => S.overviewRoots.includes(catMap.get(id).path[0]))
+    : list;
+}
+function normalizeScope() {
+  if (["overview", "method"].includes(S.view)) return;
+  const list = globalIds(),
+    root = catMap.get(list[0])?.path[0] || categories[0]?.path[0];
+  S.cats = list.filter((id) => catMap.get(id).path[0] === root);
+}
+function overviewPicker() {
+  const roots = [...new Set(globalIds().map((id) => catMap.get(id).path[0]))];
+  return `<details class="overview-filter" ${document.querySelector(".overview-filter")?.open ? "open" : ""}><summary>概览类目 · ${S.overviewRoots === null ? "当前全局范围全部" : "已选 " + roots.filter((r) => S.overviewRoots.includes(r)).length + " 个一级类目"}</summary><p class="note">仅影响本页全部模块；在全局范围内多选一级类目，不改变其他分析页。</p><div class="root-options">${roots.map((r) => `<label><input type="checkbox" data-overview-root="${esc(r)}" ${S.overviewRoots === null || S.overviewRoots.includes(r) ? "checked" : ""}>${esc(r)}</label>`).join("")}</div><button data-action="overview-all">恢复当前范围全部</button></details>`;
 }
 function period() {
   let start = S.start;
@@ -484,7 +502,9 @@ function syncControls() {
       `<label><input type="checkbox" data-plat="${i}" ${S.plats.includes(i) ? "checked" : ""}>${p}</label>`,
   ).join("");
   $("category-button").textContent =
-    S.cats === null ? "全部类目 · 分级多选" : `已选 ${ids().length} 个三级类目`;
+    S.cats === null
+      ? "全部类目 · 选择行业"
+      : `${catMap.get(globalIds()[0])?.path[0] || "未选类目"} · ${globalIds().length} 个三级类目`;
   const y = lastFullYear(S.end);
   $("range").textContent =
     `久谦 · GMV（退后）｜当前统计 ${ym(p.start)}—${ym(S.end)}${S.mode === "years" ? "（历年表逐年展示）" : ""}｜${S.plats.map((p) => PLATFORMS[p]).join(" / ") || "未选择平台"}｜数据截至 ${ym(manifest.last)}｜增长判断 ${y - 2}—${y}`;
@@ -498,7 +518,7 @@ function picker() {
     active = document.activeElement,
     key = active?.dataset.cat || active?.dataset.path;
   const term = $("cat-search").value.trim().toLowerCase(),
-    selected = new Set(ids());
+    selected = new Set(S.cats === null ? [] : globalIds());
   let html = "";
   for (const one of [...new Set(categories.map((c) => c.path[0]))]) {
     const a = categories.filter(
@@ -791,6 +811,7 @@ async function overview(t) {
   const insufficient = metrics.filter((r) => r.growth.group === null).length;
   const y = lastFullYear(S.end);
   $("main").innerHTML =
+    overviewPicker() +
     treeTable() +
     overviewYears() +
     section(
@@ -946,11 +967,13 @@ async function render() {
   renderStartedAt = renderStarted;
   $("main").dataset.longTaskMs = "0";
   exportTables.clear();
+  normalizeScope();
   syncControls();
   persist();
   $("main").setAttribute("aria-busy", "true");
   if (!ids().length || !S.plats.length) {
     $("main").innerHTML =
+      (S.view === "overview" ? overviewPicker() : "") +
       '<section class="panel"><p class="empty">请至少选择一个类目和一个平台。</p></section>';
     $("main").setAttribute("aria-busy", "false");
     return;
@@ -994,6 +1017,12 @@ document.addEventListener("table-page", () => addBarsToNew());
 document.addEventListener("click", (e) => {
   const b = e.target.closest("button");
   if (!b) return;
+  if (b.dataset.action === "overview-all") {
+    S.overviewRoots = null;
+    resetLocal();
+    render();
+    return;
+  }
   if (b.dataset.setting) {
     S[b.dataset.setting] = b.dataset.value;
     render();
@@ -1040,7 +1069,7 @@ document.addEventListener("click", (e) => {
     render();
   }
   if (b.dataset.price !== undefined) {
-    S.price = +b.dataset.price;
+    S.price = S.price === +b.dataset.price ? null : +b.dataset.price;
     render();
   }
   if (b.dataset.export) {
@@ -1155,8 +1184,22 @@ document.addEventListener("change", (e) => {
     S.brand = el.value;
     render();
   }
+  if (el.dataset.overviewRoot) {
+    const roots = new Set(
+      S.overviewRoots ?? [
+        ...new Set(globalIds().map((id) => catMap.get(id).path[0])),
+      ],
+    );
+    el.checked
+      ? roots.add(el.dataset.overviewRoot)
+      : roots.delete(el.dataset.overviewRoot);
+    S.overviewRoots = [...roots];
+    resetLocal();
+    render();
+    return;
+  }
   if (el.dataset.cat || el.dataset.path) {
-    const selected = new Set(ids());
+    const selected = new Set(S.cats === null ? [] : globalIds());
     let set = el.dataset.cat
       ? [el.dataset.cat]
       : categories
@@ -1164,10 +1207,20 @@ document.addEventListener("change", (e) => {
             JSON.parse(el.dataset.path).every((v, i) => c.path[i] === v),
           )
           .map((c) => c.id);
+    const root = catMap.get(set[0])?.path[0];
+    if (el.checked)
+      for (const id of selected)
+        if (catMap.get(id).path[0] !== root) selected.delete(id);
     set.forEach((id) => (el.checked ? selected.add(id) : selected.delete(id)));
     S.cats = selected.size === categories.length ? null : [...selected];
     picker();
-    $("category-button").textContent = `已选 ${selected.size} 个三级类目`;
+    S.overviewRoots = null;
+    S.brand = "";
+    S.compare = "";
+    S.brandSearch = "";
+    returnState = null;
+    resetLocal();
+    render();
   }
 });
 $("category-button").onclick = () => {
@@ -1182,21 +1235,26 @@ $("cat-search").oninput = () => {
   pickerTimer = setTimeout(picker, 100);
 };
 $("cat-all").onclick = () => {
-  S.cats = null;
+  const root = catMap.get(globalIds()[0])?.path[0] || categories[0].path[0];
+  S.cats = categories.filter((c) => c.path[0] === root).map((c) => c.id);
+  S.overviewRoots = null;
+  resetLocal();
+  render();
   picker();
 };
 $("cat-clear").onclick = () => {
   S.cats = [];
+  resetLocal();
+  render();
   picker();
 };
 $("cat-done").onclick = () => {
   $("category-picker").hidden = true;
   $("category-button").setAttribute("aria-expanded", "false");
-  resetLocal();
-  render();
 };
 $("reset").onclick = () => {
   S.cats = null;
+  S.overviewRoots = null;
   S.plats = [0, 1, 2];
   S.mode = "mat";
   S.end = manifest.last;
@@ -1465,10 +1523,14 @@ async function analyze(kind, list, extra = {}, raw = false) {
         leaderCache.get(key)[
           S.plats.reduce((s, p) => s + (1 << p), 0) + "|" + S.mode
         ];
-      if (d && (!extra.brand || d.cur.some((r) => r.name === extra.brand)))
-        return d;
+      if (d) return d;
     }
   }
+  const detailKind = kind === "brand" ? "brand" : "brandprice";
+  const detailPath =
+    extra.brand && (kind !== "brand" || extra.brandOnly)
+      ? manifest.brandDetails?.[detailKind]?.[extra.brand]
+      : null;
   const id = ++analysisSeq;
   return new Promise((resolve, reject) => {
     analysisJobs.set(id, { resolve, reject });
@@ -1476,12 +1538,20 @@ async function analyze(kind, list, extra = {}, raw = false) {
       type: "analyze",
       id,
       kind,
-      files: sourcePlan(
-        kind === "brand" ? "brand" : "brandprice",
-        list,
-        raw,
-        extra.history,
-      ),
+      selectedCategories: detailPath ? list : undefined,
+      files: detailPath
+        ? [
+            {
+              id: "brand-detail",
+              url: new URL("./data/" + detailPath, location.href).href,
+            },
+          ]
+        : sourcePlan(
+            kind === "brand" ? "brand" : "brandprice",
+            list,
+            raw,
+            extra.history,
+          ),
       start: P.start,
       end: P.end,
       plats: S.plats,
@@ -1719,7 +1789,7 @@ async function priceReference(t) {
   $("main").innerHTML =
     conclusion(
       top
-        ? `${ym(P.start)}—${ym(P.end)} 销售额最集中的价位是 <b>${name(top.b)}</b>（占 ${pct(ratio(top.a.g, g))}）。点击价位可筛选下方品牌矩阵。`
+        ? `${ym(P.start)}—${ym(P.end)} 销售额最集中的价位是 <b>${name(top.b)}</b>（占 ${pct(ratio(top.a.g, g))}）。点击价位筛选品牌矩阵，再点同一价位恢复全部。`
         : "当前范围暂无价格记录",
     ) +
     section(
@@ -1761,7 +1831,7 @@ async function priceReference(t) {
         ["share", "市占率"],
         ["gmv", "GMV（退后）"],
         ["qty", "销量"],
-      ]) + `<button data-action="clear-price">取消价格带筛选</button>`,
+      ]) + exportButton("price-brand-table"),
     );
   addBars();
   const d = await analyze("price", ids(), {});
@@ -1806,23 +1876,22 @@ async function priceReference(t) {
       1,
       ...leaders.flatMap((r) => shown.map((b) => value(r, b) || 0)),
     );
-  $("price-brand").innerHTML =
-    table(
-      "price-brand-table",
-      ["品牌", ...shown.map(name)],
-      leaders
-        .map(
-          (r) =>
-            `<tr><td><button class="link" data-brand="${esc(r.name)}">${esc(r.name)}</button></td>${shown
-              .map((b) => {
-                const v = value(r, b);
-                return `<td style="background:color-mix(in srgb,var(--accent) ${v ? 8 + Math.sqrt(v / mx) * 34 : 0}%,var(--surface))">${fmt(v)}</td>`;
-              })
-              .join("")}</tr>`,
-        )
-        .join(""),
-      leaders.map((r) => [r.name, ...shown.map((b) => value(r, b))]),
-    ) + exportButton("price-brand-table");
+  $("price-brand").innerHTML = table(
+    "price-brand-table",
+    ["品牌", ...shown.map(name)],
+    leaders
+      .map(
+        (r) =>
+          `<tr><td><button class="link" data-brand="${esc(r.name)}">${esc(r.name)}</button></td>${shown
+            .map((b) => {
+              const v = value(r, b);
+              return `<td style="background:color-mix(in srgb,var(--accent) ${v ? 8 + Math.sqrt(v / mx) * 34 : 0}%,var(--surface))">${fmt(v)}</td>`;
+            })
+            .join("")}</tr>`,
+      )
+      .join(""),
+    leaders.map((r) => [r.name, ...shown.map((b) => value(r, b))]),
+  );
   paginateTables();
 }
 async function competitionReference(t) {
@@ -1872,8 +1941,9 @@ async function competitionReference(t) {
       return `<tr><td>${r.rank || i + 1} <small>${old?.rank ? (old.rank > (r.rank || i + 1) ? "↑" + (old.rank - (r.rank || i + 1)) : old.rank < (r.rank || i + 1) ? "↓" + ((r.rank || i + 1) - old.rank) : "") : ""}</small></td><td><button class="link" data-brand="${esc(r.name)}">${esc(r.name)}</button></td>${cell(r.g, money)}${cell(old ? yoy(r.g, old.g) : null, delta, true)}${cell(sh, pct)}${cell(change, (v) => delta(v, true), true)}<td>¥${num(ratio(r.g, r.q))}</td><td data-main-band="${esc(r.name)}">加载中…</td><td>${mix.map((x) => `<span class="platform-value" style="color:var(--p${x.p})" title="${PLATFORMS[x.p]}">${pct(ratio(x.g, r.g))}</span>`).join(" / ") || "—"}</td></tr>`;
     })
     .join("");
-  const series = top.map((r) => ({
+  const series = top.map((r, i) => ({
     name: r.name,
+    color: brandColor(r.name, i),
     values: monthly.map((m) => {
       const found = m.ranks.find((x) => x.name === r.name);
       return found
@@ -1899,12 +1969,17 @@ async function competitionReference(t) {
     ) +
     section(
       "月度市占率",
-      "近24个月 · 当前前10品牌；缺失记录断开，不补零",
+      "近24个月 · 当前TOP10品牌；柱顶为这些品牌当月累计市占率，分母为当月品牌表合计；缺失记录不补零",
       chartFrame(
         seriesChart(
           monthly.map((m) => ym(m.month)),
           series,
-          { line: S.cmpChart !== "bar", format: pct },
+          {
+            line: S.cmpChart !== "bar",
+            format: pct,
+            max: 1,
+            totalLabels: S.cmpChart === "bar",
+          },
         ),
       ),
       segments("cmpChart", S.cmpChart || "line", [
@@ -1989,7 +2064,7 @@ async function brandReference(t) {
     share = ratio(brand.g, den),
     share0 = ratio(old?.g, den0),
     cmp = known.find((r) => r.name === S.compare && r.name !== brand.name),
-    comparison = cmp || known.find((r) => r.name !== brand.name);
+    comparison = cmp;
   const options = pool.slice(0, 150);
   if (!options.some((r) => r.name === brand.name)) options.unshift(brand);
   const focus = `<div class="brand-focus"><label>正在看的品牌 <select id="brand-select">${options.map((r) => `<option ${r.name === brand.name ? "selected" : ""}>${esc(r.name)}</option>`).join("")}</select></label><span>对比</span><label>对比对象 <select id="brand-compare"><option value="">行业整体</option>${known
@@ -2036,7 +2111,12 @@ async function brandReference(t) {
       `<b>${esc(brand.name)}</b> ${ym(period().start)}—${ym(S.end)} GMV（退后）${money(brand.g)}，同比 ${delta(old ? yoy(brand.g, old.g) : null)}；品牌表内市占率 ${pct(share)}。当前范围 ${ids().length} 个三级类目。`,
     ) +
     `<div class="kpis">${stats}</div><div id="brand-analysis"><p class="loading" id="brand-load-progress">正在加载品牌趋势与平台分布…</p></div><div id="brand-prices"><p class="loading" id="brand-price-progress">正在加载品牌价格结构…</p></div>`;
-  if (ids().length > 12 && !brandCategoryIndex && manifest.brandIndex) {
+  if (
+    !manifest.brandDetails?.brand?.[S.brand] &&
+    ids().length > 12 &&
+    !brandCategoryIndex &&
+    manifest.brandIndex
+  ) {
     brandCategoryIndex = await jsonFile(
       "./data/" + manifest.brandIndex,
       activeController.signal,

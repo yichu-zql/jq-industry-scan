@@ -108,16 +108,18 @@ def build(preview=False):
     if not preview:assert price_leaders,'Price matrix summaries required before release'
     if not preview:assert leaders,'Common-period summaries required before release'
     if not preview:assert insights,'Overview insight bundles required before release'
+    brand_details={kind:{name:copy(CACHE/'brand-details'/kind/f,'detail-'+kind) for name,f in mapping.items()} for kind,mapping in read(CACHE/'brand-details-index.json').items()} if (CACHE/'brand-details-index.json').exists() else {}
     update_status=read(ROOT/'.private'/'schedule.json')['description'] if (ROOT/'.private'/'schedule.json').exists() else '手动更新流程已提供；自动调度尚未启用。'
-    fingerprint=hashlib.sha256(json.dumps([industry_path,files,{k:{f:v for f,v in source.items() if f!='collected'} for k,source in sources.items()},insights,leaders,price_leaders,update_status],sort_keys=True).encode()).hexdigest()[:12]
+    fingerprint=hashlib.sha256(json.dumps([industry_path,files,{k:{f:v for f,v in source.items() if f!='collected'} for k,source in sources.items()},insights,leaders,price_leaders,brand_details,update_status],sort_keys=True).encode()).hexdigest()[:12]
     existing=DATA/'manifest.json'
     if existing.exists() and read(existing).get('fingerprint')==fingerprint and read(existing).get('preview') is False and not preview:
         print('UNCHANGED: aggregate fingerprint unchanged');return False
     now=datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8)))
-    manifest={'version':'2.0.0-'+fingerprint,'fingerprint':fingerprint,'built':now.strftime('%Y-%m-%d %H:%M:%S'),'first':meta['first'],'last':last,'industry':industry_path,'files':files,'sources':sources,'insights':insights,'leaders':leaders,'priceLeaders':price_leaders,'scopes':scopes,'brandIndex':brand_index_path,'audit':{k:v for k,v in audit.items() if k not in ['checks','sizes']},'preview':preview,'updateStatus':update_status}
+    manifest={'version':'2.0.0-'+fingerprint,'fingerprint':fingerprint,'built':now.strftime('%Y-%m-%d %H:%M:%S'),'first':meta['first'],'last':last,'industry':industry_path,'files':files,'sources':sources,'insights':insights,'leaders':leaders,'priceLeaders':price_leaders,'scopes':scopes,'brandIndex':brand_index_path,'brandDetails':brand_details,'audit':{k:v for k,v in audit.items() if k not in ['checks','sizes']},'preview':preview,'updateStatus':update_status}
     dump(DATA/'audit.json',audit);dump(DATA/'manifest.json',manifest);dump(pack_map_path,pack_map)
     # Retain rollback in Git history; remove only unreferenced generated hash blobs.
     referenced={industry_path,brand_index_path,*insights.values(),*leaders.values(),*price_leaders.values()}
+    referenced.update(p for mapping in brand_details.values() for p in mapping.values())
     for mapping_files in files.values():
         for entry in mapping_files.values():
             referenced.update(x['path'] for x in entry) if isinstance(entry,list) else referenced.add(entry)

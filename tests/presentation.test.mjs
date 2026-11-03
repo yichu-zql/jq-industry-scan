@@ -82,3 +82,17 @@ test("large tables create DOM for only the requested page", () => {
     dom.window.close();
   }
 });
+
+test("stack labels show cumulative share without normalizing TOP10 to 100%", () => {
+  const html = seriesChart(
+    ["M"],
+    [
+      { name: "A", values: [0.3] },
+      { name: "B", values: [0.2] },
+    ],
+    { max: 1, totalLabels: true, format: (v) => (v * 100).toFixed(1) + "%" },
+  );
+  assert.ok(html.includes("50.0%</text>"));
+  assert.ok(html.includes("100.0%</text>"));
+  assert.ok(html.includes("stack-total"));
+});

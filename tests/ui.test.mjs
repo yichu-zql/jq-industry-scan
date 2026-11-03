@@ -148,4 +148,83 @@ test("real snapshot: hierarchy, matrix, date, category and all six page paths", 
   mode.value = "custom";
   mode.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
   assert.equal(document.querySelector("#start").disabled, false);
+  // Category changes must update the active analysis without a separate Done click.
+  document.querySelector("#reset").click();
+  document.querySelector('[data-view="competition"]').click();
+  await wait(
+    () =>
+      document.querySelector("#main").getAttribute("aria-busy") === "false" &&
+      document.querySelector("#competition-table"),
+  );
+  const before = document.querySelector("#competition-table").textContent;
+  document.querySelector("#category-button").click();
+  const chooseRoot = (name) => {
+    const input = [...document.querySelectorAll("[data-path]")].find(
+      (e) => e.dataset.path === JSON.stringify([name]),
+    );
+    input.checked = true;
+    input.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+  };
+  chooseRoot("护肤");
+  await wait(
+    () =>
+      document.querySelector("#main").getAttribute("aria-busy") === "false" &&
+      document.querySelector("#competition-table")?.textContent !== before,
+  );
+  let state = JSON.parse(localStorage.getItem("jq-scan-v2")).state;
+  const manifest = JSON.parse(fs.readFileSync("data/manifest.json"));
+  const industry = JSON.parse(
+    zlib.gunzipSync(fs.readFileSync("data/" + manifest.industry)),
+  );
+  const cats = industry.categories;
+  assert.equal(
+    new Set(state.cats.map((id) => cats.find((c) => c.id === id).path[0])).size,
+    1,
+  );
+  document.querySelector('[data-view="price"]').click();
+  await wait(
+    () =>
+      document.querySelector("#main").getAttribute("aria-busy") === "false" &&
+      document.querySelector("#price-brand-table"),
+  );
+  const priceBefore = document.querySelector("#price-brand-table").textContent;
+  chooseRoot("个护仪器");
+  await wait(
+    () =>
+      document.querySelector("#main").getAttribute("aria-busy") === "false" &&
+      document.querySelector("#price-brand-table")?.textContent !== priceBefore,
+  );
+  assert.equal(
+    document.querySelectorAll('[data-action="clear-price"]').length,
+    0,
+  );
+  document.querySelector("#cat-done").click();
+  document.querySelector('[data-view="overview"]').click();
+  document.querySelector("#reset").click();
+  await wait(
+    () =>
+      document.querySelector("#main").getAttribute("aria-busy") === "false" &&
+      document.querySelectorAll("[data-overview-root]").length > 1,
+  );
+  const rootInput = document.querySelector("[data-overview-root]");
+  const excluded = rootInput.dataset.overviewRoot;
+  rootInput.checked = false;
+  rootInput.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+  await wait(
+    () => document.querySelector("#main").getAttribute("aria-busy") === "false",
+  );
+  assert.equal(
+    document.querySelectorAll("#industry-table tbody tr").length,
+    13,
+  );
+  assert.equal(
+    JSON.parse(localStorage.getItem("jq-scan-v2")).state.cats,
+    null,
+    "overview filter does not mutate global categories",
+  );
+  assert.ok(
+    ![...document.querySelectorAll("#industry-table [data-expand]")].some((e) =>
+      e.textContent.includes(excluded),
+    ),
+  );
 });
