@@ -200,31 +200,64 @@ test("real snapshot: hierarchy, matrix, date, category and all six page paths", 
   );
   document.querySelector("#cat-done").click();
   document.querySelector('[data-view="overview"]').click();
-  document.querySelector("#reset").click();
   await wait(
-    () =>
-      document.querySelector("#main").getAttribute("aria-busy") === "false" &&
-      document.querySelectorAll("[data-overview-root]").length > 1,
+    () => document.querySelector("#main").getAttribute("aria-busy") === "false",
   );
-  const rootInput = document.querySelector("[data-overview-root]");
-  const excluded = rootInput.dataset.overviewRoot;
-  rootInput.checked = false;
-  rootInput.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+  const selectedCats = JSON.parse(localStorage.getItem("jq-scan-v2")).state
+    .cats;
+  const allButton = document.querySelector("#overview-all");
+  assert.equal(allButton.hidden, false);
+  assert.equal(allButton.getAttribute("aria-pressed"), "false");
+  allButton.click();
+  await wait(
+    () => document.querySelector("#main").getAttribute("aria-busy") === "false",
+  );
+  const roots = new Set(cats.map((c) => c.path[0]));
+  assert.equal(
+    document.querySelectorAll("#industry-table tbody tr.depth0").length,
+    roots.size,
+  );
+  assert.equal(allButton.getAttribute("aria-pressed"), "true");
+  assert.deepEqual(
+    JSON.parse(localStorage.getItem("jq-scan-v2")).state.cats,
+    selectedCats,
+    "all categories preserves the selected industry for returning",
+  );
+  assert.ok(
+    document.querySelector("#range").textContent.includes("类目：全部类目"),
+  );
+  allButton.click();
   await wait(
     () => document.querySelector("#main").getAttribute("aria-busy") === "false",
   );
   assert.equal(
-    document.querySelectorAll("#industry-table tbody tr").length,
-    13,
-  );
-  assert.equal(
-    JSON.parse(localStorage.getItem("jq-scan-v2")).state.cats,
-    null,
-    "overview filter does not mutate global categories",
+    document.querySelectorAll("#industry-table tbody tr.depth0").length,
+    1,
   );
   assert.ok(
-    ![...document.querySelectorAll("#industry-table [data-expand]")].some((e) =>
-      e.textContent.includes(excluded),
-    ),
+    document.querySelector("#industry-table").textContent.includes("个护仪器"),
+  );
+  allButton.click();
+  document.querySelector('[data-view="market"]').click();
+  await wait(
+    () => document.querySelector("#main").getAttribute("aria-busy") === "false",
+  );
+  assert.equal(allButton.hidden, true);
+  assert.deepEqual(
+    JSON.parse(localStorage.getItem("jq-scan-v2")).state.cats,
+    selectedCats,
+  );
+  document.querySelector('[data-view="overview"]').click();
+  await wait(
+    () => document.querySelector("#main").getAttribute("aria-busy") === "false",
+  );
+  assert.equal(
+    document.querySelectorAll("#industry-table tbody tr.depth0").length,
+    roots.size,
+  );
+  assert.ok(
+    document
+      .querySelector("#platforms")
+      .compareDocumentPosition(document.querySelector("#category-button")) & 4,
   );
 });

@@ -2,18 +2,18 @@
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
-    <meta name="app-version" content="2.1.1" />
+    <meta name="app-version" content="2.1.2" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="color-scheme" content="light dark" />
-    <title>久谦·行业品类品牌趋势看板V2.1.1</title>
-    <link rel="stylesheet" href="./styles.css?v=2.1.1" />
+    <title>久谦·行业品类品牌趋势看板V2.1.2</title>
+    <link rel="stylesheet" href="./styles.css?v=2.1.2" />
   </head>
   <body>
     <div class="wrap">
       <div class="global-top">
         <header>
           <div>
-            <h1>久谦·行业品类品牌趋势看板<span>V2.1.1</span></h1>
+            <h1>久谦·行业品类品牌趋势看板<span>V2.1.2</span></h1>
             <p>从行业结构，到增长品类，再到品牌竞争</p>
           </div>
         </header>
@@ -29,11 +29,24 @@
                 <option value="custom">自定义</option>
               </select></label
             ><label>起始月份<input id="start" type="month" /></label
-            ><label>截止月份<input id="end" type="month" /></label
-            ><button id="category-button" aria-expanded="false">
-              全部类目 · 分级多选
+            ><label>截止月份<input id="end" type="month" /></label>
+            <div class="filter-group">
+              <span>平台：</span>
+              <div id="platforms" aria-label="平台"></div>
+            </div>
+            <div class="filter-group">
+              <span>类目：</span
+              ><button id="category-button" aria-expanded="false">
+                全部类目 · 分级多选
+              </button>
+            </div>
+            <button
+              id="overview-all"
+              aria-pressed="true"
+              title="开启查看所有行业，关闭回到类目框中的选择"
+            >
+              全部类目
             </button>
-            <div id="platforms" aria-label="平台"></div>
             <button id="reset" class="quiet">重置</button>
           </div>
           <div id="category-picker" hidden>
@@ -61,6 +74,6 @@
       <footer id="footer"></footer>
     </div>
     <div id="toast" role="status" hidden></div>
-    <script type="module" src="./app.js?v=2.1.1"></script>
+    <script type="module" src="./app.js?v=2.1.2"></script>
   </body>
 </html>

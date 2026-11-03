@@ -8,7 +8,7 @@ import {
   installViewportTableHeaders,
   COLORS,
   brandColor,
-} from "./lib/presentation.js?v=2.1.1";
+} from "./lib/presentation.js?v=2.1.2";
 const VERSION = document.querySelector('meta[name="app-version"]').content;
 import {
   PLATFORMS,
@@ -124,7 +124,7 @@ let S = {
   start: 0,
   plats: [0, 1, 2],
   cats: null,
-  overviewRoots: null,
+  overviewAll: true,
   expanded: [],
   only: true,
   matrix: null,
@@ -140,6 +140,7 @@ let S = {
 try {
   const saved = JSON.parse(localStorage.getItem("jq-scan-v2") || "null");
   if (saved?.version === 1) Object.assign(S, saved.state);
+  delete S.overviewRoots;
 } catch {}
 function persist() {
   try {
@@ -273,20 +274,15 @@ function globalIds() {
     : S.cats.filter((id) => catMap.has(id));
 }
 function ids() {
-  const list = globalIds();
-  return S.view === "overview" && S.overviewRoots !== null
-    ? list.filter((id) => S.overviewRoots.includes(catMap.get(id).path[0]))
-    : list;
+  return S.view === "overview" && S.overviewAll
+    ? categories.map((c) => c.id)
+    : globalIds();
 }
 function normalizeScope() {
   if (["overview", "method"].includes(S.view)) return;
   const list = globalIds(),
     root = catMap.get(list[0])?.path[0] || categories[0]?.path[0];
   S.cats = list.filter((id) => catMap.get(id).path[0] === root);
-}
-function overviewPicker() {
-  const roots = [...new Set(globalIds().map((id) => catMap.get(id).path[0]))];
-  return `<details class="overview-filter" ${document.querySelector(".overview-filter")?.open ? "open" : ""}><summary>概览类目 · ${S.overviewRoots === null ? "当前全局范围全部" : "已选 " + roots.filter((r) => S.overviewRoots.includes(r)).length + " 个一级类目"}</summary><p class="note">仅影响本页全部模块；在全局范围内多选一级类目，不改变其他分析页。</p><div class="root-options">${roots.map((r) => `<label><input type="checkbox" data-overview-root="${esc(r)}" ${S.overviewRoots === null || S.overviewRoots.includes(r) ? "checked" : ""}>${esc(r)}</label>`).join("")}</div><button data-action="overview-all">恢复当前范围全部</button></details>`;
 }
 function period() {
   let start = S.start;
@@ -505,9 +501,12 @@ function syncControls() {
     S.cats === null
       ? "全部类目 · 选择行业"
       : `${catMap.get(globalIds()[0])?.path[0] || "未选类目"} · ${globalIds().length} 个三级类目`;
+  $("overview-all").hidden = S.view !== "overview";
+  $("overview-all").setAttribute("aria-pressed", String(S.overviewAll));
+  $("overview-all").classList.toggle("active", S.overviewAll);
   const y = lastFullYear(S.end);
   $("range").textContent =
-    `久谦 · GMV（退后）｜当前统计 ${ym(p.start)}—${ym(S.end)}${S.mode === "years" ? "（历年表逐年展示）" : ""}｜${S.plats.map((p) => PLATFORMS[p]).join(" / ") || "未选择平台"}｜数据截至 ${ym(manifest.last)}｜增长判断 ${y - 2}—${y}`;
+    `久谦 · GMV（退后）｜当前统计 ${ym(p.start)}—${ym(S.end)}${S.mode === "years" ? "（历年表逐年展示）" : ""}｜${S.plats.map((p) => PLATFORMS[p]).join(" / ") || "未选择平台"}｜类目：${S.view === "overview" && S.overviewAll ? "全部类目" : $("category-button").textContent}｜数据截至 ${ym(manifest.last)}｜增长判断 ${y - 2}—${y}`;
 }
 function picker() {
   const tree = $("category-tree"),
@@ -811,7 +810,6 @@ async function overview(t) {
   const insufficient = metrics.filter((r) => r.growth.group === null).length;
   const y = lastFullYear(S.end);
   $("main").innerHTML =
-    overviewPicker() +
     treeTable() +
     overviewYears() +
     section(
@@ -973,7 +971,6 @@ async function render() {
   $("main").setAttribute("aria-busy", "true");
   if (!ids().length || !S.plats.length) {
     $("main").innerHTML =
-      (S.view === "overview" ? overviewPicker() : "") +
       '<section class="panel"><p class="empty">请至少选择一个类目和一个平台。</p></section>';
     $("main").setAttribute("aria-busy", "false");
     return;
@@ -1017,12 +1014,6 @@ document.addEventListener("table-page", () => addBarsToNew());
 document.addEventListener("click", (e) => {
   const b = e.target.closest("button");
   if (!b) return;
-  if (b.dataset.action === "overview-all") {
-    S.overviewRoots = null;
-    resetLocal();
-    render();
-    return;
-  }
   if (b.dataset.setting) {
     S[b.dataset.setting] = b.dataset.value;
     render();
@@ -1184,20 +1175,6 @@ document.addEventListener("change", (e) => {
     S.brand = el.value;
     render();
   }
-  if (el.dataset.overviewRoot) {
-    const roots = new Set(
-      S.overviewRoots ?? [
-        ...new Set(globalIds().map((id) => catMap.get(id).path[0])),
-      ],
-    );
-    el.checked
-      ? roots.add(el.dataset.overviewRoot)
-      : roots.delete(el.dataset.overviewRoot);
-    S.overviewRoots = [...roots];
-    resetLocal();
-    render();
-    return;
-  }
   if (el.dataset.cat || el.dataset.path) {
     const selected = new Set(S.cats === null ? [] : globalIds());
     let set = el.dataset.cat
@@ -1214,7 +1191,7 @@ document.addEventListener("change", (e) => {
     set.forEach((id) => (el.checked ? selected.add(id) : selected.delete(id)));
     S.cats = selected.size === categories.length ? null : [...selected];
     picker();
-    S.overviewRoots = null;
+    S.overviewAll = false;
     S.brand = "";
     S.compare = "";
     S.brandSearch = "";
@@ -1223,6 +1200,17 @@ document.addEventListener("change", (e) => {
     render();
   }
 });
+$("overview-all").onclick = () => {
+  S.overviewAll = !S.overviewAll;
+  if (!S.overviewAll && S.cats === null) {
+    const root = categories[0]?.path[0];
+    S.cats = categories.filter((c) => c.path[0] === root).map((c) => c.id);
+  }
+  S.expanded = [];
+  returnState = null;
+  resetLocal();
+  render();
+};
 $("category-button").onclick = () => {
   const hidden = !$("category-picker").hidden;
   $("category-picker").hidden = hidden;
@@ -1237,12 +1225,13 @@ $("cat-search").oninput = () => {
 $("cat-all").onclick = () => {
   const root = catMap.get(globalIds()[0])?.path[0] || categories[0].path[0];
   S.cats = categories.filter((c) => c.path[0] === root).map((c) => c.id);
-  S.overviewRoots = null;
+  S.overviewAll = false;
   resetLocal();
   render();
   picker();
 };
 $("cat-clear").onclick = () => {
+  S.overviewAll = false;
   S.cats = [];
   resetLocal();
   render();
@@ -1254,7 +1243,7 @@ $("cat-done").onclick = () => {
 };
 $("reset").onclick = () => {
   S.cats = null;
-  S.overviewRoots = null;
+  S.overviewAll = true;
   S.plats = [0, 1, 2];
   S.mode = "mat";
   S.end = manifest.last;

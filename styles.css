@@ -940,3 +940,15 @@ body:has(main[aria-busy="true"]) .range::after {
   fill: var(--ink);
   font-weight: 600;
 }
+
+.filter-group {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.filter-group > span {
+  white-space: nowrap;
+}
+#overview-all[hidden] {
+  display: none;
+}
