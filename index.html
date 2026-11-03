@@ -2,58 +2,55 @@
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
+    <meta name="app-version" content="2.1.0" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="color-scheme" content="light dark" />
-    <title>久谦·行业品类品牌趋势看板V2.0</title>
-    <link rel="stylesheet" href="./styles.css?v=2.0.2" />
+    <title>久谦·行业品类品牌趋势看板V2.1.0</title>
+    <link rel="stylesheet" href="./styles.css?v=2.1.0" />
   </head>
   <body>
     <div class="wrap">
-      <header>
-        <div>
-          <h1>久谦·行业品类品牌趋势看板<span>V2.0</span></h1>
-          <p>从行业结构，到增长品类，再到品牌竞争</p>
-        </div>
-        <a
-          href="https://github.com/yichu-zql/jq-industry-scan"
-          target="_blank"
-          rel="noopener"
-          >源码与维护 ↗</a
-        >
-      </header>
-      <div id="controls" inert>
-        <nav id="nav" aria-label="页面"></nav>
-        <div class="filters">
-          <label
-            >快捷时段<select id="mode">
-              <option value="mat">近12个月</option>
-              <option value="ytd">年累计</option>
-              <option value="month">单月</option>
-              <option value="years">历年</option>
-              <option value="custom">自定义</option>
-            </select></label
-          ><label>起始月份<input id="start" type="month" /></label
-          ><label>截止月份<input id="end" type="month" /></label
-          ><button id="category-button" aria-expanded="false">
-            全部类目 · 分级多选
-          </button>
-          <div id="platforms" aria-label="平台"></div>
-          <button id="reset" class="quiet">重置</button>
-        </div>
-        <div id="category-picker" hidden>
-          <div class="picker-head">
-            <input
-              id="cat-search"
-              type="search"
-              placeholder="搜索一级、二级或三级类目"
-              aria-label="搜索类目"
-            /><button id="cat-all">全选</button
-            ><button id="cat-clear">清空</button
-            ><button id="cat-done">完成</button>
+      <div class="global-top">
+        <header>
+          <div>
+            <h1>久谦·行业品类品牌趋势看板<span>V2.1.0</span></h1>
+            <p>从行业结构，到增长品类，再到品牌竞争</p>
           </div>
-          <div id="category-tree"></div>
+        </header>
+        <div id="controls" inert>
+          <nav id="nav" aria-label="页面"></nav>
+          <div class="filters">
+            <label
+              >快捷时段<select id="mode">
+                <option value="mat">近12个月</option>
+                <option value="ytd">年累计</option>
+                <option value="month">单月</option>
+                <option value="years">历年</option>
+                <option value="custom">自定义</option>
+              </select></label
+            ><label>起始月份<input id="start" type="month" /></label
+            ><label>截止月份<input id="end" type="month" /></label
+            ><button id="category-button" aria-expanded="false">
+              全部类目 · 分级多选
+            </button>
+            <div id="platforms" aria-label="平台"></div>
+            <button id="reset" class="quiet">重置</button>
+          </div>
+          <div id="category-picker" hidden>
+            <div class="picker-head">
+              <input
+                id="cat-search"
+                type="search"
+                placeholder="搜索一级、二级或三级类目"
+                aria-label="搜索类目"
+              /><button id="cat-all">全选</button
+              ><button id="cat-clear">清空</button
+              ><button id="cat-done">完成</button>
+            </div>
+            <div id="category-tree"></div>
+          </div>
+          <div class="range" id="range"></div>
         </div>
-        <div class="range" id="range"></div>
       </div>
       <main id="main" aria-live="polite">
         <p class="loading">正在加载久谦行业数据…</p>
@@ -61,6 +58,6 @@
       <footer id="footer"></footer>
     </div>
     <div id="toast" role="status" hidden></div>
-    <script type="module" src="./app.js?v=2.0.2"></script>
+    <script type="module" src="./app.js?v=2.1.0"></script>
   </body>
 </html>

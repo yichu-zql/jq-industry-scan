@@ -1,4 +1,15 @@
 import {
+  spark,
+  segments,
+  seriesChart,
+  horizontalMix,
+  paginateTables,
+  compactTableBody,
+  installViewportTableHeaders,
+  COLORS,
+} from "./lib/presentation.js";
+const VERSION = document.querySelector('meta[name="app-version"]').content;
+import {
   PLATFORMS,
   GROWTH,
   BANDS,
@@ -15,7 +26,7 @@ import {
   pairedAggregate,
   categoryMetrics,
   brandRank,
-  concentration,
+  sourceConcentration as concentration,
   isKnown,
   csv,
 } from "./lib/metrics.js";
@@ -288,8 +299,30 @@ function periods() {
     });
   return out;
 }
+const aggregateCache = new Map();
+function cachedAggregate(kind, list, plats, start, end) {
+  const key =
+    kind +
+    "|" +
+    plats.join(",") +
+    "|" +
+    start +
+    "|" +
+    end +
+    "|" +
+    list.join(",");
+  if (aggregateCache.has(key)) return aggregateCache.get(key);
+  const result =
+    kind === "pair"
+      ? pairedAggregate(index, list, plats, start, end)
+      : aggregate(index, list, plats, start, end);
+  aggregateCache.set(key, result);
+  if (aggregateCache.size > 9000)
+    aggregateCache.delete(aggregateCache.keys().next().value);
+  return result;
+}
 function totals(list = ids(), start = period().start, end = S.end) {
-  return aggregate(index, list, S.plats, start, end);
+  return cachedAggregate("sum", list, S.plats, start, end);
 }
 function prevTotals(list = ids(), start = period().start, end = S.end) {
   return totals(list, shift(start, -12), shift(end, -12));
@@ -300,7 +333,7 @@ function comparable(
   end = S.end,
   plats = S.plats,
 ) {
-  return pairedAggregate(index, list, plats, start, end);
+  return cachedAggregate("pair", list, plats, start, end);
 }
 function compCoverage(c, t, p) {
   return (
@@ -330,7 +363,17 @@ function section(title, subtitle, body, action = "") {
   return `<section class="panel"><div class="section-head"><div><h2>${title}</h2><small>${subtitle}</small></div>${action}</div>${body}</section>`;
 }
 function table(id, headers, body, exportRows) {
-  if (exportRows) exportTables.set(id, [headers, ...exportRows]);
+  body = compactTableBody(id, body);
+  if (exportRows)
+    exportTables.set(id, [
+      headers.map((h) =>
+        String(h)
+          .replace(/<[^>]*>/g, " ")
+          .replace(/\s+/g, " ")
+          .trim(),
+      ),
+      ...exportRows,
+    ]);
   return `<div class="scroll"><table id="${id}"><thead><tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr></thead><tbody>${body || `<tr><td colspan="${headers.length}" class="empty">当前范围暂无可展示数据</td></tr>`}</tbody></table></div>`;
 }
 function exportButton(id) {
@@ -396,6 +439,7 @@ function barsChart(rows, label, format = money) {
   return `<div class="chart"><svg viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(label)}"><title>${esc(label)}</title>${rows.map((r, i) => `<text x="110" y="${i * lh + 20}" text-anchor="end">${esc(r.name)}</text><rect x="120" y="${i * lh + 7}" height="17" width="${Math.max(0, ((r.v || 0) / max) * 350)}" fill="var(--accent)" opacity=".6"/><text x="${130 + Math.max(0, ((r.v || 0) / max) * 350)}" y="${i * lh + 20}">${format(r.v)}</text>`).join("")}</svg></div>`;
 }
 function addBars() {
+  paginateTables();
   document.querySelectorAll("table").forEach((table) => {
     const cells = [...table.querySelectorAll("td[data-value]")],
       cols = new Map();
@@ -515,7 +559,7 @@ function treeTable() {
     const label = path.at(-1),
       platText =
         mix.map((x) => PLATFORMS[x.p] + " " + pct(x.v)).join(" / ") || "缺失";
-    rows += `<tr class="depth${depth}"><td>${depth < 2 ? `<button class="treebtn" data-expand="${esc(key)}" aria-expanded="${opened}">${opened ? "▾" : "▸"} ${esc(label)}</button>` : esc(label)} ${!t.complete ? '<span class="tag">覆盖不全</span>' : ""}<br><small>${compCoverage(c, t, p)}</small></td><td>${money(t.g)}</td>${cell(growth, delta, true)}<td>${pct(share)}</td>${cell(pairedShare != null && share0 != null ? pairedShare - share0 : null, (v) => delta(v, true), true)}<td>${num(t.qtyValid ? t.q / 1e4 : null)}</td><td>${price == null ? "—" : "¥" + num(price)}</td>${cell(aspChange, delta, true)}<td><span class="mix">${mix.map((x) => `<i style="width:${x.v * 100}%;background:var(--p${x.p})"></i>`).join("")}</span>${esc(platText)}</td><td><button data-detail="${esc(key)}">类目详情</button></td></tr>`;
+    rows += `<tr class="depth${depth}"><td>${depth < 2 ? `<button class="treebtn" data-expand="${esc(key)}" aria-expanded="${opened}">${opened ? "▾" : "▸"} ${esc(label)}</button>` : esc(label)} ${!t.complete ? '<span class="tag">覆盖不全</span>' : ""}<br><small>${compCoverage(c, t, p)}</small></td><td>${money(t.g)}</td>${cell(growth, delta, true)}<td>${pct(share)}</td>${cell(pairedShare != null && share0 != null ? pairedShare - share0 : null, (v) => delta(v, true), true)}<td>${num(t.qtyValid ? t.q / 1e4 : null)}</td><td>${price == null ? "—" : "¥" + num(price)}</td>${cell(aspChange, delta, true)}<td><span class="mix">${mix.map((x) => `<i style="width:${x.v * 100}%;background:var(--p${x.p})"></i>`).join("")}</span>${mix.map((x) => `<span class="platform-value" style="color:var(--p${x.p})" title="${PLATFORMS[x.p]}">${pct(x.v)}</span>`).join(" / ") || "缺失"}</td><td><button data-detail="${esc(key)}">类目详情</button></td></tr>`;
     exports.push([
       path.join(" / "),
       t.g,
@@ -545,7 +589,7 @@ function treeTable() {
     );
   return section(
     "行业结构",
-    "默认一级，展开二级、三级；平台占比为销量占比，数据条按当前可见行比较",
+    "默认一级，展开二级、三级；平台占比为销量占比，数据条按当前结果比较",
     completeNote(total) +
       table(
         "industry-table",
@@ -558,7 +602,7 @@ function treeTable() {
           "销量（万件）",
           "件均价",
           "件均价同比（可比）",
-          "平台销量占比",
+          `平台销量占比<br><span class="platform-legend">${S.plats.map((p) => `<span><i style="background:var(--p${p})"></i>${PLATFORMS[p]}</span>`).join(" ")}</span>`,
           "详情",
         ],
         rows,
@@ -664,8 +708,8 @@ function summaryRanks(s) {
   ];
 }
 function candidateTable(rows, brandData) {
-  const start = S.page * 30,
-    part = rows.slice(start, start + 30),
+  const start = S.page * 10,
+    part = rows.slice(start, start + 10),
     P = period(),
     brandMap = new Map(
       (brandData || []).map((r) => [r.id, r.summary || r.rows]),
@@ -710,8 +754,9 @@ function candidateTable(rows, brandData) {
         crdiff,
         c?.top.map((b) => b.name + " " + pct(b.share)).join("；"),
         r.cur.g,
+        "",
       ]);
-      return `<tr><td><button class="link" data-detail="${esc(JSON.stringify(r.path))}">${esc(r.path[2])}</button><br><small>${esc(r.path.slice(0, 2).join(" / "))}</small></td>${cell(r.annual.g, money)}${cell(annY, delta, true)}<td>${BANDS[r.band]}</td><td>${GROWTH[r.growth.group]}<br><span class="tag">${r.growth.reason}</span></td>${r.growth.ys.map((y) => `<td>${delta(y)}</td>`).join("")}${cell(r.growth.cagr, delta, true)}<td>${c ? pct(c.cr5) : "加载中…"}${c && c.cr5 == null ? "<br>" + reconcileNote(c) : ""}</td>${cell(crdiff, (v) => delta(v, true), true)}<td>${c?.top.length ? c.top.map((b) => esc(b.name) + " " + pct(b.share)).join("<br>") : b ? "—" : "加载中…"}</td><td>${money(r.cur.g)}</td></tr>`;
+      return `<tr><td><button class="link" data-detail="${esc(JSON.stringify(r.path))}">${esc(r.path[2])}</button><br><small>${esc(r.path.slice(0, 2).join(" / "))}</small></td>${cell(r.annual.g, money)}${cell(annY, delta, true)}<td>${BANDS[r.band]}</td><td>${GROWTH[r.growth.group]}<br><span class="tag">${r.growth.reason}</span></td>${r.growth.ys.map((y) => `<td>${delta(y)}</td>`).join("")}${cell(r.growth.cagr, delta, true)}<td>${c ? pct(c.cr5) : "加载中…"}${c && c.cr5 == null ? "<br>" + reconcileNote(c) : c && Math.abs(c.coverage - 1) > 0.01 ? `<br><small>品牌/行业 ${pct(c.coverage)}</small>` : ""}</td>${cell(crdiff, (v) => delta(v, true), true)}<td>${c?.top.length ? c.top.map((b) => esc(b.name) + " " + pct(b.share)).join("<br>") : b ? "—" : "加载中…"}</td><td>${money(r.cur.g)}</td><td><button data-detail="${esc(JSON.stringify(r.path))}">类目详情</button></td></tr>`;
     })
     .join("");
   const years = annualRange(S.end).slice(1);
@@ -728,20 +773,21 @@ function candidateTable(rows, brandData) {
         "三年CAGR",
         "CR5",
         "CR5同比变化",
-        "TOP3品牌 / 市占率",
+        "TOP3品牌 / 市占率<br><small>品牌表口径</small>",
         "所选时段GMV（退后）",
+        "详情",
       ],
       html,
       ex,
     ) +
-    `<div class="pagination"><small>共 ${rows.length} 项 · 当前 ${rows.length ? start + 1 : 0}—${Math.min(start + 30, rows.length)}；CSV导出当前页</small><button data-page="-1" ${S.page === 0 ? "disabled" : ""}>上一页</button><button data-page="1" ${start + 30 >= rows.length ? "disabled" : ""}>下一页</button></div>`
+    `<div class="pagination"><small>共 ${rows.length} 项 · 当前 ${rows.length ? start + 1 : 0}—${Math.min(start + 10, rows.length)}；CSV导出当前页</small><button data-page="-1" ${S.page === 0 ? "disabled" : ""}>上一页</button><button data-page="1" ${start + 10 >= rows.length ? "disabled" : ""}>下一页</button></div>`
   );
 }
 async function overview(t) {
   const metrics = await calcMetricsAsync();
   if (t !== token) return;
   const rows = candidateRows(metrics);
-  S.page = Math.min(S.page, Math.max(0, Math.ceil(rows.length / 30) - 1));
+  S.page = Math.min(S.page, Math.max(0, Math.ceil(rows.length / 10) - 1));
   const insufficient = metrics.filter((r) => r.growth.group === null).length;
   const y = lastFullYear(S.end);
   $("main").innerHTML =
@@ -754,7 +800,7 @@ async function overview(t) {
       `<label><input id="only-growth" type="checkbox" ${S.only ? "checked" : ""}>只看入选增长品类</label>`,
     );
   addBars();
-  const part = rows.slice(S.page * 30, S.page * 30 + 30);
+  const part = rows.slice(S.page * 10, S.page * 10 + 10);
   try {
     let data;
     const insightPath = manifest.insights?.[S.end];
@@ -787,6 +833,7 @@ async function overview(t) {
     if (t !== token) return;
     $("growth-results").innerHTML = candidateTable(rows, data);
     addBarsToNew();
+    paginateTables();
   } catch (e) {
     if (t === token) {
       toast(e.message);
@@ -802,60 +849,6 @@ function addBarsToNew() {
   document
     .querySelectorAll(".databar .fill,.databar .zero")
     .forEach((e) => e.remove());
-  addBars();
-}
-function trendMonths() {
-  return months(Math.max(manifest.first, shift(S.end, -23)), S.end);
-}
-function market() {
-  const t = totals(),
-    p = prevTotals(),
-    c = comparable(),
-    price = t.qtyValid ? ratio(t.g, t.q) : null;
-  const points = trendMonths().map((m) => {
-      const a = totals(ids(), m, m);
-      return { label: ym(m), v: a.g };
-    }),
-    growth = trendMonths().map((m) => {
-      const a = totals(ids(), m, m),
-        b = totals(ids(), shift(m, -12), shift(m, -12)),
-        c = comparable(ids(), m, m);
-      return {
-        label: ym(m),
-        v: yoy(c.cur.g, c.prev.g),
-      };
-    });
-  const ps = periods();
-  let er = [];
-  const rows = ps
-    .map((P) => {
-      const a = totals(ids(), P.start, P.end),
-        b = prevTotals(ids(), P.start, P.end),
-        c = comparable(ids(), P.start, P.end),
-        price = a.qtyValid ? ratio(a.g, a.q) : null;
-      er.push([
-        P.label,
-        a.g,
-        yoy(c.cur.g, c.prev.g),
-        a.qtyValid ? a.q : null,
-        price,
-        ...a.byPlat.map((x) => x.g),
-      ]);
-      return `<tr><td>${P.label}</td><td>${money(a.g)}${!a.complete ? ' <span class="tag">覆盖不全</span>' : ""}</td>${cell(yoy(c.cur.g, c.prev.g), delta, true)}<td>${num(a.qtyValid ? a.q : null)}</td><td>${price == null ? "—" : "¥" + num(price)}</td>${a.byPlat.map((x) => `<td>${money(x.present ? x.g : null)}</td>`).join("")}</tr>`;
-    })
-    .join("");
-  const scope =
-    ids().length === 1
-      ? esc(catMap.get(ids()[0]).path.join(" / "))
-      : `所选 ${ids().length} 个三级类目合并分析`;
-  $("main").innerHTML =
-    section(
-      "类目大盘",
-      scope,
-      `${completeNote(t)}<p class="note">${compCoverage(c, t, p)}；可比金额：本期 ${money(c.cur.g)} / 上期 ${money(c.prev.g)}。</p><div class="stats">${unitStat("GMV（退后）", money(t.g), "可比同比 " + pct(yoy(c.cur.g, c.prev.g)))}${unitStat("销量", num(t.qtyValid ? t.q : null), "件")}${unitStat("件均价", price == null ? "—" : "¥" + num(price), "汇总金额 ÷ 汇总销量")}</div><div class="grid2"><div><h3>月度GMV（退后）</h3>${lineChart(points, "月度GMV（退后）")}</div><div><h3>月度同比（可比范围）</h3>${lineChart(growth, "月度GMV（退后）同比", pct)}</div></div>${table("market-table", ["时段", "GMV（退后）", "同比（可比）", "销量", "件均价", ...S.plats.map((p) => PLATFORMS[p] + "GMV（退后）")], rows, er)}`,
-      exportButton("market-table"),
-    ) +
-    section("平台结构", "平台销量占比与金额占比分开展示", platformTable(t, p));
   addBars();
 }
 function platformTable(t, p) {
@@ -907,318 +900,6 @@ function priceSum(parts, P, brand = null) {
     }
   return bins;
 }
-async function pricePage(t) {
-  loadingDetails("类目价格带");
-  const selected = ids();
-  const parts = await loadMany("price", selected, t);
-  if (t !== token) return;
-  const P = period(),
-    Q = { start: shift(P.start, -12), end: shift(P.end, -12) },
-    cur = priceSum(parts, P),
-    prev = priceSum(parts, Q),
-    g = [...cur.values()].reduce((s, r) => s + r.g, 0),
-    total = totals();
-  let ex = [];
-  const rows = [0, 1, 2, 3, 4, 5, 6, 7, 8, -1]
-    .map((b) => {
-      const a = cur.get(b),
-        z = prev.get(b),
-        name = b < 0 ? "价格缺失 / 非正" : PRICE[b] + "元";
-      ex.push([
-        name,
-        a?.g,
-        a && z ? yoy(a.g, z.g) : null,
-        a ? ratio(a.g, g) : null,
-        a?.q,
-      ]);
-      return `<tr><td><button class="link" data-price="${b}" aria-pressed="${S.price === b}">${name}${S.price === b ? " ✓" : ""}</button></td>${cell(a?.g, money)}${cell(a && z ? yoy(a.g, z.g) : null, delta, true)}<td>${pct(a ? ratio(a.g, g) : null)}</td><td>${num(a?.q)}</td><td>${a ? "¥" + num(ratio(a.g, a.q)) : "—"}</td></tr>`;
-    })
-    .join("");
-  const yearly = periods().map((p) => ({ p, values: priceSum(parts, p) }));
-  const yearRows = yearly
-    .map(
-      ({ p, values }) =>
-        `<tr><td>${p.label}</td>${Array.from({ length: 9 }, (_, i) => `<td>${money(values.get(i)?.g)}</td>`).join("")}</tr>`,
-    )
-    .join("");
-  $("main").innerHTML =
-    section(
-      "类目价格带",
-      `${selected.length} 个三级类目 · 商品月度原始件均价（asp）分档 · 不做价格校正`,
-      `<p class="note">统一可比较的绝对价格档，左闭右开。价格缺失记录保留在单独一档；点击价格档只筛选本页品牌矩阵，不改变全局行业规模。</p><p class="note ${Math.abs(yoy(g, total.g) ?? Infinity) > 0.01 ? "warning" : ""}">商品明细汇总 / 行业汇总：${pct(ratio(g, total.g))}；本页份额分母为所选商品数据总额。${Math.abs(yoy(g, total.g) ?? Infinity) > 0.01 ? "两源覆盖不一致，本页不能代替行业大盘。" : ""}</p><div class="grid2"><div>${barsChart(
-        PRICE.map((name, i) => ({ name: name + "元", v: cur.get(i)?.g })),
-        "价格带GMV（退后）",
-      )}</div><div>${table("price-table", ["价格带", "GMV（退后）", "同比", "占商品金额", "销量", "件均价"], rows, ex)}</div></div>${S.mode === "years" ? table("price-years", ["年份", ...PRICE.map((n) => n + "元")], yearRows) : ""}`,
-      exportButton("price-table"),
-    ) +
-    section(
-      "价格带 × 品牌",
-      "各价格带内部的品牌市占率；分母包含未识别品牌",
-      '<div id="price-brand"><p class="loading">正在加载品牌价格结构…</p></div>',
-      `<button data-action="clear-price" ${S.price == null ? "disabled" : ""}>取消价格带筛选</button>`,
-    );
-  addBars();
-  if (analysisWorker) return priceBrandsFast(t);
-  const bp = await loadMany("brandprice", selected, t);
-  if (t !== token) return;
-  const brandMap = new Map(),
-    totalsBand = new Map();
-  for (const { rows } of bp)
-    for (const r of rows) {
-      if (
-        r[0] < P.start ||
-        r[0] > P.end ||
-        !S.plats.includes(r[1]) ||
-        (S.price != null && S.price !== r[3])
-      )
-        continue;
-      const band = r[3],
-        name = r[2] || "未识别品牌";
-      totalsBand.set(band, (totalsBand.get(band) || 0) + (r[4] ?? 0));
-      if (!isKnown(name)) continue;
-      if (!brandMap.has(name)) brandMap.set(name, { name, g: 0, b: new Map() });
-      const v = brandMap.get(name);
-      v.g += r[4] ?? 0;
-      v.b.set(band, (v.b.get(band) || 0) + (r[4] ?? 0));
-    }
-  const top = [...brandMap.values()].sort((a, b) => b.g - a.g).slice(0, 20),
-    bands = S.price == null ? [0, 1, 2, 3, 4, 5, 6, 7, 8] : [S.price];
-  const tr = top
-    .map(
-      (r) =>
-        `<tr><td><button class="link" data-brand="${esc(r.name)}">${esc(r.name)}</button></td><td>${money(r.g)}</td>${bands
-          .map((b) => {
-            const share = ratio(r.b.get(b) || 0, totalsBand.get(b));
-            return `<td style="background:color-mix(in srgb,var(--accent) ${Math.min(25, (share || 0) * 60)}%,var(--surface))">${pct(share)}</td>`;
-          })
-          .join("")}</tr>`,
-    )
-    .join("");
-  $("price-brand").innerHTML =
-    table(
-      "price-brand-table",
-      [
-        "品牌",
-        "GMV（退后）",
-        ...bands.map((b) => (b < 0 ? "价格缺失" : PRICE[b] + "元")),
-      ],
-      tr,
-      top.map((r) => [
-        r.name,
-        r.g,
-        ...bands.map((b) => ratio(r.b.get(b) || 0, totalsBand.get(b))),
-      ]),
-    ) + exportButton("price-brand-table");
-}
-function joined(parts) {
-  return parts.flatMap((p) => p.rows);
-}
-async function competition(t) {
-  if (analysisWorker) return competitionFast(t);
-  loadingDetails("竞品格局");
-  const parts = await loadMany("brand", ids(), t);
-  if (t !== token) return;
-  const rows = joined(parts),
-    P = period(),
-    cur = brandRank(rows, S.plats, P.start, P.end),
-    prev = brandRank(rows, S.plats, shift(P.start, -12), shift(P.end, -12)),
-    total = totals(),
-    prevTotal = prevTotals(),
-    c = concentration(cur, total.g, total.complete),
-    c0 = concentration(prev, prevTotal.g, prevTotal.complete),
-    pm = new Map(prev.map((r) => [r.name, r]));
-  let ex = [];
-  const tr = cur
-    .filter((r) => isKnown(r.name))
-    .slice(0, 100)
-    .map((r, i) => {
-      const old = pm.get(r.name),
-        share = c.cr5 != null ? ratio(r.g, total.g) : null,
-        share0 = c0.cr5 != null && old ? ratio(old.g, prevTotal.g) : null;
-      ex.push([
-        i + 1,
-        r.name,
-        r.g,
-        old ? yoy(r.g, old.g) : null,
-        share,
-        share != null && share0 != null ? share - share0 : null,
-        r.q,
-        ratio(r.g, r.q),
-      ]);
-      return `<tr><td>${i + 1}</td><td><button class="link" data-brand="${esc(r.name)}">${esc(r.name)}</button></td>${cell(r.g, money)}${cell(old ? yoy(r.g, old.g) : null, delta, true)}<td>${pct(share)}</td>${cell(share != null && share0 != null ? share - share0 : null, (v) => delta(v, true), true)}<td>${num(r.q)}</td><td>¥${num(ratio(r.g, r.q))}</td></tr>`;
-    })
-    .join("");
-  const crPoints = trendMonths().map((m) => {
-    const tt = totals(ids(), m, m);
-    return {
-      label: ym(m),
-      v: concentration(brandRank(rows, S.plats, m, m), tt.g, tt.complete).cr5,
-    };
-  });
-  $("main").innerHTML = section(
-    "竞品格局",
-    `所选 ${ids().length} 个三级类目合并排名 · 展示前100个已识别品牌`,
-    `${completeNote(total)}<div class="stats">${unitStat("行业GMV（退后）", money(total.g))}${unitStat("CR5", pct(c.cr5), c.cr5 != null && c0.cr5 != null ? "同比变化 " + ((c.cr5 - c0.cr5) * 100).toFixed(1) + "pp" : "待对账或缺少同比")}${unitStat("品牌 / 行业金额", pct(c.coverage), "允许对账误差≤1%")}</div>${reconcileNote(c)}<div class="grid2"><div><h3>品牌GMV（退后）前10</h3>${barsChart(
-      cur
-        .filter((r) => isKnown(r.name))
-        .slice(0, 10)
-        .map((r) => ({
-          name: r.name.length > 12 ? r.name.slice(0, 12) + "…" : r.name,
-          v: r.g,
-        })),
-      "品牌排名",
-    )}</div><div><h3>月度CR5</h3>${lineChart(crPoints, "CR5趋势", pct)}</div></div>${table("competition-table", ["排名", "品牌", "GMV（退后）", "同比", "市占率", "份额变化", "销量", "件均价"], tr, ex)}`,
-    exportButton("competition-table"),
-  );
-  addBars();
-}
-async function brandPage(t) {
-  if (analysisWorker) return brandFast(t);
-  loadingDetails("品牌深挖");
-  const parts = await loadMany("brand", ids(), t);
-  if (t !== token) return;
-  const rows = joined(parts),
-    P = period(),
-    cur = brandRank(rows, S.plats, P.start, P.end).filter((r) =>
-      isKnown(r.name),
-    ),
-    prev = brandRank(rows, S.plats, shift(P.start, -12), shift(P.end, -12)),
-    total = totals(),
-    prevTotal = prevTotals(),
-    allRank = brandRank(rows, S.plats, P.start, P.end),
-    checked = concentration(allRank, total.g, total.complete);
-  if (!cur.length) {
-    $("main").innerHTML = section(
-      "品牌深挖",
-      "当前范围",
-      '<p class="empty">暂无已识别品牌数据</p>',
-    );
-    return;
-  }
-  if (!cur.some((r) => r.name === S.brand)) S.brand = cur[0].name;
-  const brand = cur.find((r) => r.name === S.brand),
-    prior = prev.find((r) => r.name === S.brand),
-    rank = cur.findIndex((r) => r.name === S.brand) + 1;
-  const options = cur
-    .filter(
-      (r) =>
-        r.name === S.brand ||
-        !S.brandSearch ||
-        r.name.toLowerCase().includes(S.brandSearch.toLowerCase()),
-    )
-    .slice(0, 150)
-    .map(
-      (r) =>
-        `<option ${r.name === S.brand ? "selected" : ""} value="${esc(r.name)}">${esc(r.name)}</option>`,
-    )
-    .join("");
-  const pts = trendMonths().map((m) => ({
-    label: ym(m),
-    v:
-      brandRank(rows, S.plats, m, m).find((r) => r.name === S.brand)?.g ?? null,
-  }));
-  let ex = [];
-  const yr = periods()
-    .map((p) => {
-      const a = brandRank(rows, S.plats, p.start, p.end).find(
-          (r) => r.name === S.brand,
-        ),
-        b = brandRank(
-          rows,
-          S.plats,
-          shift(p.start, -12),
-          shift(p.end, -12),
-        ).find((r) => r.name === S.brand);
-      ex.push([
-        p.label,
-        a?.g,
-        a && b ? yoy(a.g, b.g) : null,
-        a?.q,
-        a ? ratio(a.g, a.q) : null,
-      ]);
-      return `<tr><td>${p.label}</td><td>${money(a?.g)}</td>${cell(a && b ? yoy(a.g, b.g) : null, delta, true)}<td>${num(a?.q)}</td><td>${a ? "¥" + num(ratio(a.g, a.q)) : "—"}</td></tr>`;
-    })
-    .join("");
-  let categoryParts = parts;
-  if (parts.some((p) => p.id.startsWith("scope_"))) {
-    if (!brandCategoryIndex && manifest.brandIndex && ids().length > 12)
-      brandCategoryIndex = await jsonFile(
-        "./data/" + manifest.brandIndex,
-        activeController.signal,
-      );
-    const relevant = (brandCategoryIndex?.[S.brand] || ids()).filter((id) =>
-      ids().includes(id),
-    );
-    categoryParts = await loadMany("brand", relevant, t, true);
-    if (t !== token) return;
-  }
-  const catRows = categoryParts
-    .map((part) => ({
-      id: part.id,
-      r: brandRank(part.rows, S.plats, P.start, P.end).find(
-        (r) => r.name === S.brand,
-      ),
-      all: totals([part.id]),
-    }))
-    .filter((x) => x.r)
-    .sort((a, b) => b.r.g - a.r.g);
-  const catHtml = catRows
-    .map((x) => {
-      const ranks = brandRank(
-          categoryParts.find((p) => p.id === x.id).rows,
-          S.plats,
-          P.start,
-          P.end,
-        ),
-        valid = concentration(ranks, x.all.g, x.all.complete).cr5 != null;
-      return `<tr><td>${esc(catMap.get(x.id)?.path.join(" / "))}</td><td>${money(x.r.g)}</td><td>${pct(ratio(x.r.g, brand.g))}</td><td>${valid ? pct(ratio(x.r.g, x.all.g)) : "待对账"}</td></tr>`;
-    })
-    .join("");
-  const platformRows = S.plats.map((p) => {
-    const r = brandRank(rows, [p], P.start, P.end).find(
-      (r) => r.name === S.brand,
-    );
-    return { name: PLATFORMS[p], v: r?.g };
-  });
-  $("main").innerHTML =
-    section(
-      "品牌深挖",
-      `品牌份额只针对当前所选 ${ids().length} 个三级类目，不能解释为品牌全市场份额`,
-      `<div class="toolbar"><label>搜索品牌 <input type="search" id="brand-search" value="${esc(S.brandSearch || "")}" placeholder="输入品牌关键词"></label><button data-action="brand-search">搜索</button><label>正在看的品牌 <select id="brand-select">${options}</select></label><small>选择列表最多显示150项，可搜索完整品牌池</small></div><div class="stats">${unitStat("GMV（退后）", money(brand.g), "同比 " + pct(prior ? yoy(brand.g, prior.g) : null))}${unitStat("市占率", checked.cr5 != null ? pct(ratio(brand.g, total.g)) : "待对账")}${unitStat("品牌排名", rank + " / " + cur.length)}${unitStat("件均价", "¥" + num(ratio(brand.g, brand.q)))}</div><div class="grid2"><div><h3>月度GMV（退后）</h3>${lineChart(pts, "品牌月度销售额")}</div><div><h3>当前时段平台结构</h3>${barsChart(platformRows, "品牌平台金额")}</div></div>${table("brand-years", ["时段", "GMV（退后）", "同比", "销量", "件均价"], yr, ex)}`,
-      exportButton("brand-years"),
-    ) +
-    section(
-      "品牌类目构成",
-      "占品牌：所选类目中的品牌金额构成；类目市占率：品牌金额÷该类目总额",
-      table(
-        "brand-categories",
-        ["类目路径", "GMV（退后）", "占所选品牌金额", "类目内市占率"],
-        catHtml,
-      ),
-    ) +
-    section(
-      "品牌价格带",
-      "同一筛选范围，来自商品月度数据；与品牌汇总表分别核对",
-      '<div id="brand-prices"><p class="loading" id="brand-price-progress">正在加载价格结构…</p></div>',
-    );
-  addBars();
-  const bp = await loadMany("brandprice", ids(), t);
-  if (t !== token) return;
-  const values = priceSum(bp, P, S.brand),
-    g = [...values.values()].reduce((s, r) => s + r.g, 0);
-  $("brand-prices").innerHTML =
-    `<p class="note">商品表品牌金额 / 品牌表金额：${pct(ratio(g, brand.g))}。价格带占比以商品表中该品牌的金额为分母。</p>` +
-    table(
-      "brand-price-table",
-      ["价格带", "GMV（退后）", "占品牌商品金额", "销量"],
-      [0, 1, 2, 3, 4, 5, 6, 7, 8, -1]
-        .map((b) => {
-          const a = values.get(b);
-          return `<tr><td>${b < 0 ? "价格缺失" : PRICE[b] + "元"}</td><td>${money(a?.g)}</td><td>${pct(a ? ratio(a.g, g) : null)}</td><td>${num(a?.q)}</td></tr>`;
-        })
-        .join(""),
-    );
-}
 function method() {
   const a = manifest.audit || {};
   $("main").innerHTML = section(
@@ -1248,7 +929,7 @@ function method() {
             `<tr><td>${esc(v.table || k)}</td><td>${esc(v.use || "")}</td><td>${ym(v.first)}—${ym(v.last)}</td><td>${esc(v.loaded)}</td><td>${esc(v.collected)}</td></tr>`,
         )
         .join(""),
-    )}</details><details class="method" open><summary>指标和增长规则</summary><ul><li>GMV（退后）使用源表 gmv，单位为人民币元；页面按金额自动显示万/亿，CSV统一导出元。延续原看板的久谦退后口径；表结构没有独立退款字段，不通过退前减退款重新推算。</li><li>件均价＝汇总GMV（退后）÷汇总销量，不能平均商品单价。份额变化及 CR5 同比变化使用百分点 pp。</li><li>增长档：三个完整年度同比均负＝持续下滑；均正且三年 CAGR＜20%＝持续中低速增长；均正且 CAGR≥20%＝持续高速增长；其余＝持平或波动增长/回落。</li><li>三年 CAGR＝最后一年金额÷三年前金额的立方根−1。判断三个年度同比需要四个完整年度；任何必需月份、平台、基期缺失则暂无法判断。</li><li>入选增长品类：年GMV（退后）≥1亿元，并满足连续三年同比均＞0，或近三个完整年度至少一年同比严格＞50%。</li><li>年规模采用截止月向前12个月；同比再向前移12个月。单月、年累计和自定义时段影响普通分析，矩阵始终保持完整年规模；年份判断以截止月前最近完整年度为准。</li><li>行业占比＝当前类目已入库金额÷全局所选已入库金额；行业结构、类目大盘和历年行业同比采用两期都有记录的相同类目-月份-平台集合，份额变化也使用该共同集合，覆盖率单独列示；展开子类目不改变分母。多选按三级类目ID去重。父子级不重复累计。</li><li>CR5＝本期前5个已识别品牌金额÷行业金额。上年独立选取前5品牌。其他 Other、无品牌和未识别品牌计入分母、不参与排名。品牌与行业金额偏差超过1%或范围不完整时，不展示CR5和品牌市占率。</li><li>价格带按原始 asp 划分，左闭右开；缺失及非正价格独立保留。价格带和品牌价格结构的份额分母来自商品表，不能直接套用行业表。</li><li>缺失与零值区分：无源记录不当作零。累计值可展示已入库金额并提示缺月；不完整范围不计算整体现有范围同比或年分档；行业可比同比只使用两期共同记录，并明确显示可比覆盖率。品牌未出现不推断为新品牌或真实零销售。</li></ul></details><details class="method" open><summary>本次校验结果</summary><p>${esc(a.summary || "详见数据检查文件")}</p><p>源表含负金额或负销量的聚合记录：${esc(JSON.stringify(a.negativeRows || {}))}。保留原始汇总，非正销量不计算件均价；这些记录的修订原因源表未说明。</p><p>行业原始键冲突：${a.industryConflicts ?? "—"}；映射歧义路径：${a.mappingAmbiguities ?? "—"}。事实表已带久谦路径，不通过映射表多对多关联放大金额。</p><p>品牌 / 行业对账通过：${a.brandMatched ?? "—"} / ${a.brandCompared ?? "—"} 个可比三级类目（最近12个月，全平台）。未通过类目保留金额展示，CR5与份额留空并提示。</p><p>商品 / 行业对账通过：${a.priceMatched ?? "—"} / ${a.priceCompared ?? "—"}。店铺表用于汇总核验，不以店铺名推断品牌，不展示商品系列。</p></details><details class="method" open><summary>更新与发布</summary><p id="schedule-status">${esc(manifest.updateStatus || "手动更新脚本已提供，定时任务尚未启用。")}</p><ol><li>只读获取五张久谦源表；核对入库时间和月份覆盖。</li><li>形成隔离候选数据，检查精确键、类目路径、月份连续性、负值和跨表口径。</li><li>无实质变化不产生数据版本；校验失败保留线上上一成功版本。</li><li>通过检查后提交源码和聚合数据，推送 GitHub Pages，再检查正式页面与版本。</li></ol><p>所有源表缺少可用索引，当前全量聚合成本较高。首次版本采用全量快照；不把未实现的最近三个月增量更新写成已启用。</p></details><p>数据可公开访问；网站不保存数据库凭据，不由浏览器直接连接数据库。筛选状态仅存当前浏览器。</p></div>`,
+    )}</details><details class="method" open><summary>指标和增长规则</summary><ul><li>GMV（退后）使用源表 gmv，单位为人民币元；页面按金额自动显示万/亿，CSV统一导出元。延续原看板的久谦退后口径；表结构没有独立退款字段，不通过退前减退款重新推算。</li><li>件均价＝汇总GMV（退后）÷汇总销量，不能平均商品单价。份额变化及 CR5 同比变化使用百分点 pp。</li><li>增长档：三个完整年度同比均负＝持续下滑；均正且三年 CAGR＜20%＝持续中低速增长；均正且 CAGR≥20%＝持续高速增长；其余＝持平或波动增长/回落。</li><li>三年 CAGR＝最后一年金额÷三年前金额的立方根−1。判断三个年度同比需要四个完整年度；任何必需月份、平台、基期缺失则暂无法判断。</li><li>入选增长品类：年GMV（退后）≥1亿元，并满足连续三年同比均＞0，或近三个完整年度至少一年同比严格＞50%。</li><li>年规模采用截止月向前12个月；同比再向前移12个月。单月、年累计和自定义时段影响普通分析，矩阵始终保持完整年规模；年份判断以截止月前最近完整年度为准。</li><li>行业占比＝当前类目已入库金额÷全局所选已入库金额；行业结构、类目大盘和历年行业同比采用两期都有记录的相同类目-月份-平台集合，份额变化也使用该共同集合，覆盖率单独列示；展开子类目不改变分母。多选按三级类目ID去重。父子级不重复累计。</li><li>CR5＝本期前5个已识别品牌金额÷当前范围品牌表汇总金额。上年独立选取前5品牌。其他 Other、无品牌和未识别品牌计入分母、不参与排名。品牌市占率与CR5使用品牌表同源分母（含未识别品牌）；不因跨表覆盖差异隐藏。覆盖不足时表示已入库品牌数据内份额，不能解释为全市场份额。品牌与行业差异另行披露。</li><li>价格带按原始 asp 划分，左闭右开；缺失及非正价格独立保留。价格带和品牌价格结构的份额分母来自商品表，不能直接套用行业表。</li><li>缺失与零值区分：无源记录不当作零。累计值可展示已入库金额并提示缺月；不完整范围不计算整体现有范围同比或年分档；行业可比同比只使用两期共同记录，并明确显示可比覆盖率。品牌未出现不推断为新品牌或真实零销售。</li></ul></details><details class="method" open><summary>本次校验结果</summary><p>${esc(a.summary || "详见数据检查文件")}</p><p>源表含负金额或负销量的聚合记录：${esc(JSON.stringify(a.negativeRows || {}))}。保留原始汇总，非正销量不计算件均价；这些记录的修订原因源表未说明。</p><p>行业原始键冲突：${a.industryConflicts ?? "—"}；映射歧义路径：${a.mappingAmbiguities ?? "—"}。事实表已带久谦路径，不通过映射表多对多关联放大金额。</p><p>品牌 / 行业对账通过：${a.brandMatched ?? "—"} / ${a.brandCompared ?? "—"} 个可比三级类目（最近12个月，全平台）。跨表差异保留作覆盖审核；品牌份额与CR5按同源品牌数据计算。</p><p>商品 / 行业对账通过：${a.priceMatched ?? "—"} / ${a.priceCompared ?? "—"}。店铺表用于汇总核验，不以店铺名推断品牌，不展示商品系列。</p></details><details class="method" open><summary>更新与发布</summary><p id="schedule-status">${esc(manifest.updateStatus || "手动更新脚本已提供，定时任务尚未启用。")}</p><ol><li>只读获取五张久谦源表；核对入库时间和月份覆盖。</li><li>形成隔离候选数据，检查精确键、类目路径、月份连续性、负值和跨表口径。</li><li>无实质变化不产生数据版本；校验失败保留线上上一成功版本。</li><li>通过检查后提交源码和聚合数据，推送 GitHub Pages，再检查正式页面与版本。</li></ol><p>所有源表缺少可用索引，当前全量聚合成本较高。首次版本采用全量快照；不把未实现的最近三个月增量更新写成已启用。</p></details><p>数据可公开访问；网站不保存数据库凭据，不由浏览器直接连接数据库。筛选状态仅存当前浏览器。</p></div>`,
   );
 }
 async function render() {
@@ -1276,10 +957,10 @@ async function render() {
   }
   try {
     if (S.view === "overview") await overview(t);
-    else if (S.view === "market") market();
-    else if (S.view === "price") await pricePage(t);
-    else if (S.view === "competition") await competition(t);
-    else if (S.view === "brand") await brandPage(t);
+    else if (S.view === "market") await marketReference(t);
+    else if (S.view === "price") await priceReference(t);
+    else if (S.view === "competition") await competitionReference(t);
+    else if (S.view === "brand") await brandReference(t);
     else method();
     if (t === token) {
       $("main").setAttribute("aria-busy", "false");
@@ -1309,11 +990,18 @@ function resetLocal() {
   S.price = null;
   metricsKey = null;
 }
+document.addEventListener("table-page", () => addBarsToNew());
 document.addEventListener("click", (e) => {
   const b = e.target.closest("button");
   if (!b) return;
+  if (b.dataset.setting) {
+    S[b.dataset.setting] = b.dataset.value;
+    render();
+    return;
+  }
   if (b.dataset.view) {
     S.view = b.dataset.view;
+    window.scrollTo({ top: 0 });
     location.hash = S.view;
     render();
   }
@@ -1459,6 +1147,10 @@ document.addEventListener("change", (e) => {
     S.page = 0;
     render();
   }
+  if (el.id === "brand-compare") {
+    S.compare = el.value;
+    render();
+  }
   if (el.id === "brand-select") {
     S.brand = el.value;
     render();
@@ -1525,7 +1217,7 @@ window.addEventListener("hashchange", () => {
 function setupWorker() {
   if (!globalThis.Worker) return;
   metricsWorker = new Worker(
-    new URL("./lib/metrics-worker.js", import.meta.url),
+    new URL("./lib/metrics-worker.js?v=" + VERSION, import.meta.url),
     { type: "module" },
   );
   metricsWorker.onmessage = (e) => {
@@ -1567,9 +1259,12 @@ async function calcMetricsAsync() {
 }
 function setupDataWorker() {
   if (!globalThis.Worker) return;
-  dataWorker = new Worker(new URL("./lib/data-worker.js", import.meta.url), {
-    type: "module",
-  });
+  dataWorker = new Worker(
+    new URL("./lib/data-worker.js?v=" + VERSION, import.meta.url),
+    {
+      type: "module",
+    },
+  );
   dataWorker.onmessage = ({ data: m }) => {
     const job = dataJobs.get(m.id);
     if (job) {
@@ -1622,8 +1317,12 @@ async function boot() {
     const v = location.hash.slice(1);
     if (views.some((x) => x[0] === v)) S.view = v;
     $("footer").textContent =
-      `久谦数据 · ${manifest.version} · ${categories.length}个三级类目 · 最近成功数据生成 ${manifest.built}（北京时间）`;
+      `看板 V${VERSION} · 数据 ${manifest.version} · ${categories.length}个三级类目 · 最近成功数据生成 ${manifest.built}（北京时间）`;
     $("controls").removeAttribute("inert");
+    document.title = `久谦·行业品类品牌趋势看板V${VERSION}`;
+    document.querySelector("h1 span").textContent = `V${VERSION}`;
+    if (window.requestAnimationFrame && globalThis.MutationObserver)
+      installViewportTableHeaders();
     await render();
     document.body.dataset.initialDataMs = (
       performance.now() - bootStarted
@@ -1636,7 +1335,7 @@ async function boot() {
 function setupAnalysisWorker() {
   if (!globalThis.Worker) return;
   analysisWorker = new Worker(
-    new URL("./lib/analysis-worker.js", import.meta.url),
+    new URL("./lib/analysis-worker.js?v=" + VERSION, import.meta.url),
     { type: "module" },
   );
   analysisWorker.onmessage = ({ data: m }) => {
@@ -1703,6 +1402,7 @@ async function analyze(kind, list, extra = {}, raw = false) {
   const P = period();
   if (
     kind === "price" &&
+    !extra.history &&
     !extra.brand &&
     S.end === manifest.last &&
     ["mat", "ytd", "month"].includes(S.mode)
@@ -1789,237 +1489,734 @@ async function analyze(kind, list, extra = {}, raw = false) {
     });
   });
 }
-async function priceBrandsFast(t) {
-  const d = await analyze("price", ids(), { band: S.price });
+boot();
+function kpi(label, value, sub = "", values = [], color) {
+  return `<div class="kpi"><div class="k">${label}</div><div class="v">${value}</div><div class="d">${sub}</div>${values.length ? spark(values, color) : ""}</div>`;
+}
+function conclusion(text) {
+  return `<div class="conclusion"><span class="tag">结论</span>${text}</div>`;
+}
+function chartFrame(html) {
+  return `<div class="chart-frame">${html}</div>`;
+}
+async function marketReference(t) {
+  const a = totals(),
+    b = prevTotals(),
+    c = comparable(),
+    ms = months(Math.max(manifest.first, shift(S.end, -35)), S.end),
+    monthly = ms.map((m) => totals(ids(), m, m));
+  const tiny = monthly.slice(-13),
+    g = ratio(a.g, a.q),
+    gran = S.gran || "m",
+    share = S.trendVal === "share";
+  const buckets = [];
+  ms.forEach((m, i) => {
+    const key =
+      gran === "q"
+        ? `${Math.floor(m / 100)}Q${Math.ceil((m % 100) / 3)}`
+        : gran === "y"
+          ? String(Math.floor(m / 100))
+          : ym(m);
+    let last = buckets.at(-1);
+    if (!last || last.key !== key) buckets.push((last = { key, indices: [] }));
+    last.indices.push(i);
+  });
+  const series = S.plats.map((p) => ({
+    name: PLATFORMS[p],
+    color: `var(--p${p})`,
+    values: buckets.map((bucket) => {
+      const rows = bucket.indices
+        .map((i) => monthly[i].byPlat.find((x) => x.p === p))
+        .filter((x) => x?.present);
+      return rows.length ? rows.reduce((v, x) => v + x.g, 0) : null;
+    }),
+  }));
+  const growth = buckets.map((bucket) => {
+    const start = ms[bucket.indices[0]],
+      end = ms[bucket.indices.at(-1)],
+      v = comparable(ids(), start, end);
+    return yoy(v.cur.g, v.prev.g);
+  });
+  const scope =
+    ids().length === 1
+      ? catMap.get(ids()[0]).path.join(" / ")
+      : `所选 ${ids().length} 个三级类目`;
+  const stats =
+    kpi(
+      "GMV（退后）",
+      money(a.g),
+      "同比 " + delta(yoy(c.cur.g, c.prev.g)),
+      tiny.map((x) => x.g),
+    ) +
+    kpi(
+      "销量",
+      money(a.q) + "件",
+      "同比 " + delta(c.qtyValid ? yoy(c.cur.q, c.prev.q) : null),
+      tiny.map((x) => x.q),
+    ) +
+    kpi(
+      "件均价",
+      "¥" + num(g),
+      "同比 " +
+        delta(
+          c.qtyValid
+            ? yoy(ratio(c.cur.g, c.cur.q), ratio(c.prev.g, c.prev.q))
+            : null,
+        ),
+      tiny.map((x) => ratio(x.g, x.q)),
+      "#7258ba",
+    ) +
+    '<div id="market-cr" class="kpi"><div class="k">CR5</div><p class="loading">加载品牌数据…</p></div><div id="market-top" class="kpi"><div class="k">第一品牌</div><p class="loading">加载品牌数据…</p></div>';
+  const controls =
+    segments("gran", gran, [
+      ["m", "月度"],
+      ["q", "季度"],
+      ["y", "年度"],
+    ]) +
+    segments("trendVal", share ? "share" : "gmv", [
+      ["gmv", "GMV（退后）"],
+      ["share", "GMV（退后）占比"],
+    ]);
+  const detailRows = ids()
+    .map((id) => {
+      const x = totals([id]),
+        z = comparable([id]);
+      return { id, x, z };
+    })
+    .sort((a, b) => b.x.g - a.x.g);
+  const detailHeaders = [
+    "细分品类",
+    "GMV（退后）",
+    "同比（可比）",
+    "占比",
+    "销量",
+    "件均价",
+    "详情",
+  ];
+  const detail = table(
+    "market-categories",
+    detailHeaders,
+    detailRows
+      .map(
+        ({ id, x, z }) =>
+          `<tr><td>${esc(catMap.get(id).path.join(" / "))}</td>${cell(x.g, money)}${cell(yoy(z.cur.g, z.prev.g), delta, true)}${cell(ratio(x.g, a.g), pct)}<td>${num(x.q)}</td><td>¥${num(ratio(x.g, x.q))}</td><td><button data-detail="${esc(JSON.stringify(catMap.get(id).path))}">类目详情</button></td></tr>`,
+      )
+      .join(""),
+    detailRows.map(({ id, x, z }) => [
+      catMap.get(id).path.join("/"),
+      x.g,
+      yoy(z.cur.g, z.prev.g),
+      ratio(x.g, a.g),
+      x.q,
+      ratio(x.g, x.q),
+      "",
+    ]),
+  );
+  $("main").innerHTML =
+    conclusion(
+      `${esc(scope)} ${ym(period().start)}—${ym(S.end)}，GMV（退后）<b>${money(a.g)}</b>，可比同比 <b>${delta(yoy(c.cur.g, c.prev.g))}</b>；件均价 ¥${num(g)}。`,
+    ) +
+    `<div class="kpis">${stats}</div>` +
+    section(
+      "销售趋势",
+      `${gran === "m" ? "近36个月" : gran === "q" ? "季度汇总" : "年度汇总"} · 截至 ${ym(S.end)}；未满季度或年度按已选截止月，悬浮或聚焦图形查看数值`,
+      chartFrame(
+        seriesChart(
+          buckets.map((x) => x.key),
+          series,
+          { percent: share, format: share ? pct : money },
+        ),
+      ) +
+        `<h3>GMV（退后）同比</h3>` +
+        chartFrame(
+          seriesChart(
+            buckets.map((x) => x.key),
+            [{ name: "和上一年相同月份比较", values: growth }],
+            { signed: true, format: pct, height: 145 },
+          ),
+        ),
+      controls,
+    ) +
+    section(
+      "结构",
+      compCoverage(c, a, b),
+      completeNote(a) +
+        `<h3>平台结构</h3>${platformTable(a, b)}<div class="section-head subhead"><h3>细分品类结构</h3>${exportButton("market-categories")}</div>${detail}`,
+    );
+  addBars();
+  const d = await analyze("brand", ids());
   if (t !== token) return;
-  const bins = new Map(d.bins.map((r) => [r.name, r.g])),
-    bands = S.price == null ? [0, 1, 2, 3, 4, 5, 6, 7, 8] : [S.price];
-  const rows = d.top
-    .map(
-      (r) =>
-        `<tr><td><button class="link" data-brand="${esc(r.name)}">${esc(r.name)}</button></td><td>${money(r.g)}</td>${bands
-          .map((b) => {
-            const share = ratio(r.bands[b] || 0, bins.get(b));
-            return `<td style="background:color-mix(in srgb,var(--accent) ${Math.min(25, (share || 0) * 60)}%,var(--surface))">${pct(share)}</td>`;
-          })
-          .join("")}</tr>`,
-    )
-    .join("");
+  const cr = concentration(d.cur, a.g),
+    cr0 = concentration(d.prev, b.g),
+    top = cr.top[0],
+    old = top ? d.prev.find((r) => r.name === top.name) : null;
+  const month = d.monthly.sort((a, b) => a.month - b.month).slice(-13),
+    crVals = month.map((m) => concentration(m.ranks, 1).cr5),
+    topVals = month.map((m) => {
+      const r = m.ranks.find((r) => r.name === top?.name);
+      return r
+        ? ratio(
+            r.g,
+            m.ranks.reduce((s, r) => s + r.g, 0),
+          )
+        : null;
+    });
+  $("market-cr").outerHTML = kpi(
+    "CR5（品牌表口径）",
+    pct(cr.cr5),
+    "变化 " +
+      delta(cr.cr5 != null && cr0.cr5 != null ? cr.cr5 - cr0.cr5 : null, true),
+    crVals,
+    "#7258ba",
+  );
+  $("market-top").outerHTML = kpi(
+    "第一品牌",
+    top ? `${esc(top.name)} <small>${pct(top.share)}</small>` : "—",
+    "份额变化 " +
+      delta(
+        top && old ? top.share - ratio(old.g, cr0.denominator) : null,
+        true,
+      ),
+    topVals,
+    "#e96635",
+  );
+}
+async function priceReference(t) {
+  loadingDetails("类目价格带");
+  const parts = await loadMany("price", ids(), t);
+  if (t !== token) return;
+  const P = period(),
+    Q = { start: shift(P.start, -12), end: shift(P.end, -12) },
+    cur = priceSum(parts, P),
+    prev = priceSum(parts, Q),
+    g = [...cur.values()].reduce((s, r) => s + r.g, 0),
+    g0 = [...prev.values()].reduce((s, r) => s + r.g, 0),
+    bands = [0, 1, 2, 3, 4, 5, 6, 7, 8, -1],
+    name = (b) => (b < 0 ? "价格缺失 / 非正" : PRICE[b] + "元");
+  const rows = bands.map((b) => ({ b, a: cur.get(b), z: prev.get(b) })),
+    top = rows.filter((r) => r.a).sort((a, b) => b.a.g - a.a.g)[0];
+  const migration = [];
+  for (let k = 3; k >= 0; k--) {
+    const start = shift(P.start, -12 * k),
+      end = shift(P.end, -12 * k);
+    if (start < manifest.first) continue;
+    const bins = priceSum(parts, { start, end });
+    migration.push({
+      label: ym(start) + "—" + ym(end),
+      parts: bands.map((b) => ({ name: name(b), band: b, g: bins.get(b)?.g })),
+    });
+  }
+  const heads = [
+    "价格带（元）",
+    "GMV（退后）",
+    "同比",
+    "占比",
+    "占比变化",
+    "件均价",
+    "第一品牌",
+    "第二品牌",
+  ];
+  $("main").innerHTML =
+    conclusion(
+      top
+        ? `${ym(P.start)}—${ym(P.end)} 销售额最集中的价位是 <b>${name(top.b)}</b>（占 ${pct(ratio(top.a.g, g))}）。点击价位可筛选下方品牌矩阵。`
+        : "当前范围暂无价格记录",
+    ) +
+    section(
+      "价格带占比迁移",
+      "各年同期的价格带结构 · 100%堆叠 · 缺失价格单列",
+      horizontalMix(migration),
+    ) +
+    section(
+      "价格带分布",
+      "份额以当前商品表汇总金额为分母；原始件均价分档，不做价格校正",
+      `<p class="note">商品 / 行业金额：${pct(ratio(g, totals().g))}；两源覆盖差异不混入份额分母。</p>` +
+        table(
+          "price-table",
+          heads,
+          rows
+            .map(
+              ({ b, a, z }) =>
+                `<tr><td><button class="link" data-price="${b}" aria-pressed="${S.price === b}">${name(b)}${S.price === b ? " ✓" : ""}</button></td>${cell(a?.g, money)}${cell(a && z ? yoy(a.g, z.g) : null, delta, true)}${cell(ratio(a?.g, g), pct)}${cell(a && z ? ratio(a.g, g) - ratio(z.g, g0) : null, (v) => delta(v, true), true)}<td>¥${num(ratio(a?.g, a?.q))}</td><td data-leader-band="${b}">加载中…</td><td data-second-band="${b}">加载中…</td></tr>`,
+            )
+            .join(""),
+          rows.map(({ b, a, z }) => [
+            name(b),
+            a?.g,
+            a && z ? yoy(a.g, z.g) : null,
+            ratio(a?.g, g),
+            a && z ? ratio(a.g, g) - ratio(z.g, g0) : null,
+            ratio(a?.g, a?.q),
+            null,
+            null,
+          ]),
+        ),
+      exportButton("price-table"),
+    ) +
+    section(
+      "价格带 × 品牌",
+      "每列为该价位内品牌份额，颜色越深数值越大；未识别品牌计入分母",
+      `<div id="price-brand"><p class="loading" id="load-progress">正在加载品牌价格结构…</p></div>`,
+      segments("heatVal", S.heatVal || "share", [
+        ["share", "市占率"],
+        ["gmv", "GMV（退后）"],
+        ["qty", "销量"],
+      ]) + `<button data-action="clear-price">取消价格带筛选</button>`,
+    );
+  addBars();
+  const d = await analyze("price", ids(), {});
+  if (t !== token) return;
+  const binMap = new Map(d.bins.map((r) => [r.name, r]));
+  for (const b of bands) {
+    const lead =
+      d.bandLeaders?.[b] ||
+      d.top
+        .filter((r) => r.bands[b] > 0)
+        .sort((a, z) => z.bands[b] - a.bands[b]);
+    for (const [attr, k] of [
+      ["data-leader-band", 0],
+      ["data-second-band", 1],
+    ]) {
+      const el = document.querySelector(`[${attr}="${b}"]`),
+        r = lead[k];
+      el.textContent = r
+        ? `${r.name} ${pct(ratio(r.bands[b], cur.get(b)?.g))}`
+        : "—";
+    }
+    const out = exportTables.get("price-table")?.[bands.indexOf(b) + 1];
+    if (out) {
+      out[6] = document.querySelector(`[data-leader-band="${b}"]`).textContent;
+      out[7] = document.querySelector(`[data-second-band="${b}"]`).textContent;
+    }
+  }
+  const matrixData =
+    S.price == null ? d : await analyze("price", ids(), { band: S.price });
+  if (t !== token) return;
+  const shown = S.price == null ? bands : bands.filter((b) => b === S.price),
+    hv = S.heatVal || "share",
+    value = (r, b) =>
+      hv === "gmv"
+        ? r.bands[b]
+        : hv === "qty"
+          ? r.bandQty?.[b]
+          : ratio(r.bands[b], binMap.get(b)?.g),
+    fmt = hv === "share" ? pct : money;
+  const leaders = matrixData.top.slice(0, 20),
+    mx = Math.max(
+      1,
+      ...leaders.flatMap((r) => shown.map((b) => value(r, b) || 0)),
+    );
   $("price-brand").innerHTML =
     table(
       "price-brand-table",
-      [
-        "品牌",
-        "GMV（退后）",
-        ...bands.map((b) => (b < 0 ? "价格缺失" : PRICE[b] + "元")),
-      ],
-      rows,
-      d.top.map((r) => [
-        r.name,
-        r.g,
-        ...bands.map((b) => ratio(r.bands[b] || 0, bins.get(b))),
-      ]),
+      ["品牌", ...shown.map(name)],
+      leaders
+        .map(
+          (r) =>
+            `<tr><td><button class="link" data-brand="${esc(r.name)}">${esc(r.name)}</button></td>${shown
+              .map((b) => {
+                const v = value(r, b);
+                return `<td style="background:color-mix(in srgb,var(--accent) ${v ? 8 + Math.sqrt(v / mx) * 34 : 0}%,var(--surface))">${fmt(v)}</td>`;
+              })
+              .join("")}</tr>`,
+        )
+        .join(""),
+      leaders.map((r) => [r.name, ...shown.map((b) => value(r, b))]),
     ) + exportButton("price-brand-table");
+  paginateTables();
 }
-async function competitionFast(t) {
+async function competitionReference(t) {
   loadingDetails("竞品格局");
   const d = await analyze("brand", ids());
   if (t !== token) return;
   const total = totals(),
     prior = prevTotals(),
-    c = concentration(d.cur, total.g, total.complete),
-    c0 = concentration(d.prev, prior.g, prior.complete),
+    c = concentration(d.cur, total.g),
+    c0 = concentration(d.prev, prior.g),
+    known = d.cur.filter((r) => isKnown(r.name)),
     pm = new Map(d.prev.map((r) => [r.name, r])),
-    known = d.cur.filter((r) => isKnown(r.name));
-  const exports = [];
+    lead = known[0],
+    monthly = d.monthly.sort((a, b) => a.month - b.month),
+    top = known.slice(0, 10),
+    headers = [
+      "排名 / 变化",
+      "品牌",
+      "GMV（退后）",
+      "同比",
+      "市占率",
+      "份额变化",
+      "件均价",
+      "主力价格带",
+      "平台构成",
+    ];
+  const ex = [];
   const rows = known
     .slice(0, 100)
     .map((r, i) => {
       const old = pm.get(r.name),
-        sh = c.cr5 != null ? ratio(r.g, total.g) : null,
-        sh0 = c0.cr5 != null && old ? ratio(old.g, prior.g) : null;
-      exports.push([
-        i + 1,
+        sh = ratio(r.g, c.denominator),
+        sh0 = ratio(old?.g, c0.denominator),
+        change = sh != null && sh0 != null ? sh - sh0 : null,
+        mix = r.platforms || [];
+      ex.push([
+        r.rank || i + 1,
         r.name,
         r.g,
         old ? yoy(r.g, old.g) : null,
         sh,
-        sh != null && sh0 != null ? sh - sh0 : null,
-        r.q,
+        change,
         ratio(r.g, r.q),
+        null,
+        mix.map((x) => PLATFORMS[x.p] + " " + pct(ratio(x.g, r.g))).join("/"),
       ]);
-      return `<tr><td>${i + 1}</td><td><button class="link" data-brand="${esc(r.name)}">${esc(r.name)}</button></td>${cell(r.g, money)}${cell(old ? yoy(r.g, old.g) : null, delta, true)}<td>${pct(sh)}</td>${cell(sh != null && sh0 != null ? sh - sh0 : null, (v) => delta(v, true), true)}<td>${num(r.q)}</td><td>¥${num(ratio(r.g, r.q))}</td></tr>`;
+      return `<tr><td>${r.rank || i + 1} <small>${old?.rank ? (old.rank > (r.rank || i + 1) ? "↑" + (old.rank - (r.rank || i + 1)) : old.rank < (r.rank || i + 1) ? "↓" + ((r.rank || i + 1) - old.rank) : "") : ""}</small></td><td><button class="link" data-brand="${esc(r.name)}">${esc(r.name)}</button></td>${cell(r.g, money)}${cell(old ? yoy(r.g, old.g) : null, delta, true)}${cell(sh, pct)}${cell(change, (v) => delta(v, true), true)}<td>¥${num(ratio(r.g, r.q))}</td><td data-main-band="${esc(r.name)}">加载中…</td><td>${mix.map((x) => `<span class="platform-value" style="color:var(--p${x.p})" title="${PLATFORMS[x.p]}">${pct(ratio(x.g, r.g))}</span>`).join(" / ") || "—"}</td></tr>`;
     })
     .join("");
-  const points = d.monthly
-    .sort((a, b) => a.month - b.month)
-    .map((m) => {
-      const a = totals(ids(), m.month, m.month);
-      return {
-        label: ym(m.month),
-        v: concentration(m.ranks, a.g, a.complete).cr5,
-      };
-    });
-  $("main").innerHTML = section(
-    "竞品格局",
-    `所选 ${ids().length} 个三级类目合并排名 · 共 ${d.knownCount} 个已识别品牌，展示前100`,
-    `${completeNote(total)}<div class="stats">${unitStat("行业GMV（退后）", money(total.g))}${unitStat("CR5", pct(c.cr5), c.cr5 != null && c0.cr5 != null ? "同比变化 " + ((c.cr5 - c0.cr5) * 100).toFixed(1) + "pp" : "待对账或缺少同比")}${unitStat("品牌 / 行业金额", pct(c.coverage), "允许对账误差≤1%")}</div>${reconcileNote(c)}<div class="grid2"><div><h3>品牌GMV（退后）前10</h3>${barsChart(
-      known.slice(0, 10).map((r) => ({
-        name: r.name.length > 12 ? r.name.slice(0, 12) + "…" : r.name,
-        v: r.g,
-      })),
-      "品牌排名",
-    )}</div><div><h3>月度CR5</h3>${lineChart(points, "月度CR5", pct)}</div></div>${table("competition-table", ["排名", "品牌", "GMV（退后）", "同比", "市占率", "份额变化", "销量", "件均价"], rows, exports)}`,
-    exportButton("competition-table"),
-  );
+  const series = top.map((r) => ({
+    name: r.name,
+    values: monthly.map((m) => {
+      const found = m.ranks.find((x) => x.name === r.name);
+      return found
+        ? ratio(
+            found.g,
+            m.ranks.reduce((s, x) => s + x.g, 0),
+          )
+        : null;
+    }),
+  }));
+  $("main").innerHTML =
+    conclusion(
+      lead
+        ? `${ym(period().start)}—${ym(S.end)} <b>${esc(lead.name)}</b> 以 ${pct(ratio(lead.g, c.denominator))} 的品牌表内市占率排名第一；CR5 <b>${pct(c.cr5)}</b>，同比变化 ${delta(c.cr5 != null && c0.cr5 != null ? c.cr5 - c0.cr5 : null, true)}。`
+        : "当前范围暂无品牌记录",
+    ) +
+    section(
+      "品牌格局",
+      `共 ${d.knownCount} 个已识别品牌，展示前100；市占率分母包含未识别品牌`,
+      `<p class="note">品牌 / 行业金额 ${pct(c.coverage)}；市占率按品牌表已入库同源范围计算。平台构成：${S.plats.map((p) => `<span style="color:var(--p${p})">■ ${PLATFORMS[p]}</span>`).join("　")}</p>` +
+        table("competition-table", headers, rows, ex),
+      exportButton("competition-table"),
+    ) +
+    section(
+      "月度市占率",
+      "近24个月 · 当前前10品牌；缺失记录断开，不补零",
+      chartFrame(
+        seriesChart(
+          monthly.map((m) => ym(m.month)),
+          series,
+          { line: S.cmpChart !== "bar", format: pct },
+        ),
+      ),
+      segments("cmpChart", S.cmpChart || "line", [
+        ["line", "折线图"],
+        ["bar", "堆积柱状图"],
+      ]),
+    );
   addBars();
+  const prices = await analyze("price", ids(), {
+    lookupNames: known.slice(0, 100).map((r) => r.name),
+  });
+  if (t !== token) return;
+  document.querySelectorAll("[data-main-band]").forEach((el) => {
+    const r = prices.top.find((x) => x.name === el.dataset.mainBand);
+    const mapped = prices.mainBands?.[el.dataset.mainBand];
+    const best =
+      mapped != null
+        ? [mapped]
+        : r
+          ? Object.entries(r.bands).sort((a, b) => b[1] - a[1])[0]
+          : null;
+    el.textContent = best
+      ? +best[0] < 0
+        ? "价格缺失"
+        : PRICE[+best[0]] + "元"
+      : "商品表无对应记录";
+    const row = ex.find((x) => x[1] === el.dataset.mainBand);
+    if (row) row[7] = el.textContent;
+  });
   if (S.mode === "years") {
     const history = await analyze("brand", ids(), {
-      yearlyNames: known.slice(0, 10).map((r) => r.name),
+      yearlyNames: top.map((r) => r.name),
       history: true,
     });
     if (t !== token) return;
-    const map = new Map(history.yearly.map((r) => [r.name, r.g])),
-      ps = periods();
-    const tr = known
-      .slice(0, 10)
-      .map(
-        (r) =>
-          `<tr><td>${esc(r.name)}</td>${ps.map((p) => `<td>${money(map.get(Math.floor(p.end / 100) + "|" + r.name))}</td>`).join("")}</tr>`,
-      )
-      .join("");
+    const map = new Map(history.yearly.map((r) => [r.name, r]));
     $("main").insertAdjacentHTML(
       "beforeend",
       section(
-        "头部品牌历年规模",
-        "本期前10品牌 · 各年度GMV（退后）；末年显示截至所选月份",
-        table("competition-years", ["品牌", ...ps.map((p) => p.label)], tr),
+        "历年品牌格局",
+        "当前前10品牌历年GMV（退后）；当年截至所选月份",
+        table(
+          "competition-years",
+          ["品牌", ...periods().map((p) => p.label)],
+          top
+            .map(
+              (r) =>
+                `<tr><td>${esc(r.name)}</td>${periods()
+                  .map(
+                    (p) =>
+                      `<td>${money(map.get(Math.floor(p.end / 100) + "|" + r.name)?.g)}</td>`,
+                  )
+                  .join("")}</tr>`,
+            )
+            .join(""),
+        ),
       ),
     );
+    paginateTables();
   }
 }
-async function brandFast(t) {
+async function brandReference(t) {
   loadingDetails("品牌深挖");
   const d = await analyze("brand", ids(), {
     brand: S.brand,
     search: S.brandSearch || "",
   });
   if (t !== token) return;
-  const known = d.cur.filter((r) => isKnown(r.name));
-  if (!known.length) {
-    $("main").innerHTML = section(
-      "品牌深挖",
-      "当前所选范围",
-      '<p class="empty">暂无已识别品牌记录</p>',
+  const known = d.cur.filter((r) => isKnown(r.name)),
+    pool = known.filter(
+      (r) => !S.brandSearch || r.name.includes(S.brandSearch.toLowerCase()),
     );
+  if (!known.length) {
+    $("main").innerHTML = section("品牌深挖", "当前范围", "暂无已识别品牌");
     return;
   }
-  if (!known.some((r) => r.name === S.brand)) S.brand = known[0].name;
-  const brand = known.find((r) => r.name === S.brand),
-    prev = d.prev.find((r) => r.name === S.brand),
-    total = totals(),
-    con = concentration(d.cur, total.g, total.complete);
-  const hits = known
-    .filter(
-      (r) =>
-        r.name !== S.brand &&
-        (!S.brandSearch ||
-          r.name.toLowerCase().includes(S.brandSearch.toLowerCase())),
-    )
-    .slice(0, 149);
-  const opts = [brand, ...hits]
+  let brand = known.find((r) => r.name === S.brand) || pool[0] || known[0];
+  S.brand = brand.name;
+  const old = d.prev.find((r) => r.name === brand.name),
+    den = d.cur.reduce((s, r) => s + r.g, 0),
+    den0 = d.prev.reduce((s, r) => s + r.g, 0),
+    share = ratio(brand.g, den),
+    share0 = ratio(old?.g, den0),
+    cmp = known.find((r) => r.name === S.compare && r.name !== brand.name),
+    comparison = cmp || known.find((r) => r.name !== brand.name);
+  const options = pool.slice(0, 150);
+  if (!options.some((r) => r.name === brand.name)) options.unshift(brand);
+  const focus = `<div class="brand-focus"><label>正在看的品牌 <select id="brand-select">${options.map((r) => `<option ${r.name === brand.name ? "selected" : ""}>${esc(r.name)}</option>`).join("")}</select></label><span>对比</span><label>对比对象 <select id="brand-compare"><option value="">行业整体</option>${known
+    .slice(0, 150)
+    .filter((r) => r.name !== brand.name)
     .map(
       (r) =>
-        `<option value="${esc(r.name)}" ${r.name === S.brand ? "selected" : ""}>${esc(r.name)}</option>`,
+        `<option ${r.name === cmp?.name ? "selected" : ""}>${esc(r.name)}</option>`,
     )
-    .join("");
-  $("main").innerHTML =
-    section(
-      "品牌深挖",
-      `品牌份额针对所选 ${ids().length} 个三级类目，不代表品牌全市场份额`,
-      `<div class="toolbar"><label>搜索品牌 <input type="search" id="brand-search" value="${esc(S.brandSearch || "")}" placeholder="输入品牌关键词"></label><button data-action="brand-search">搜索</button><label>正在看的品牌 <select id="brand-select">${opts}</select></label><small>完整品牌池搜索，最多显示150个选项</small></div><div class="stats">${unitStat("GMV（退后）", money(brand.g), "同比 " + pct(prev ? yoy(brand.g, prev.g) : null))}${unitStat("市占率", con.cr5 != null ? pct(ratio(brand.g, total.g)) : "待对账")}${unitStat("品牌排名", brand.rank + " / " + d.knownCount)}${unitStat("件均价", "¥" + num(ratio(brand.g, brand.q)))}</div><div id="brand-analysis"><p class="loading" id="brand-load-progress">正在加载该品牌的类目、平台与趋势…</p></div>`,
+    .join(
+      "",
+    )}</select></label><label>搜索品牌 <input id="brand-search" type="search" value="${esc(S.brandSearch || "")}" placeholder="输入品牌关键词"></label><button data-action="brand-search">搜索</button></div>`;
+  const stats =
+    kpi(
+      "GMV（退后）",
+      money(brand.g),
+      "同比 " + delta(old ? yoy(brand.g, old.g) : null),
     ) +
-    section(
-      "品牌价格带",
-      "按当前所选时段、平台、类目计算；商品来源与品牌来源分别对账",
-      '<div id="brand-prices"><p class="loading" id="brand-price-progress">正在加载价格结构…</p></div>',
+    kpi(
+      "市占率",
+      pct(share),
+      "变化 " +
+        delta(share != null && share0 != null ? share - share0 : null, true),
+    ) +
+    kpi(
+      "排名",
+      "第 " + (brand.rank || known.indexOf(brand) + 1),
+      old?.rank ? "上年同期第 " + old.rank : "上年同期排名缺失",
+    ) +
+    kpi(
+      "件均价",
+      "¥" + num(ratio(brand.g, brand.q)),
+      "同比 " +
+        delta(old ? yoy(ratio(brand.g, brand.q), ratio(old.g, old.q)) : null),
+    ) +
+    kpi(
+      "销量",
+      money(brand.q) + "件",
+      "同比 " + delta(old ? yoy(brand.q, old.q) : null),
     );
-  if (!brandCategoryIndex && manifest.brandIndex && ids().length > 12)
+  $("main").innerHTML =
+    focus +
+    conclusion(
+      `<b>${esc(brand.name)}</b> ${ym(period().start)}—${ym(S.end)} GMV（退后）${money(brand.g)}，同比 ${delta(old ? yoy(brand.g, old.g) : null)}；品牌表内市占率 ${pct(share)}。当前范围 ${ids().length} 个三级类目。`,
+    ) +
+    `<div class="kpis">${stats}</div><div id="brand-analysis"><p class="loading" id="brand-load-progress">正在加载品牌趋势与平台分布…</p></div><div id="brand-prices"><p class="loading" id="brand-price-progress">正在加载品牌价格结构…</p></div>`;
+  if (ids().length > 12 && !brandCategoryIndex && manifest.brandIndex) {
     brandCategoryIndex = await jsonFile(
       "./data/" + manifest.brandIndex,
       activeController.signal,
     );
-  if (t !== token) return;
-  const selected = new Set(ids()),
-    relevant = (brandCategoryIndex?.[S.brand] || ids()).filter((id) =>
-      selected.has(id),
-    );
+    if (t !== token) return;
+  }
+  const selectedIds = new Set(ids()),
+    brandIds = (name) =>
+      brandCategoryIndex?.[name]?.filter((id) => selectedIds.has(id)) || ids();
   const detail = await analyze(
     "brand",
-    relevant,
-    { brand: S.brand, brandOnly: true },
+    brandIds(S.brand),
+    { brand: S.brand, brandOnly: true, history: true },
     true,
   );
   if (t !== token) return;
-  const monthMap = new Map(
-    detail.monthly.map((x) => [x.month, x.brand?.g ?? null]),
-  );
-  const points = trendMonths().map((m) => ({
-    label: ym(m),
-    v: monthMap.get(m) ?? null,
+  let other = null;
+  if (comparison) {
+    other = await analyze(
+      "brand",
+      brandIds(comparison.name),
+      { brand: comparison.name, brandOnly: true },
+      true,
+    );
+    if (t !== token) return;
+  }
+  const monthly = d.monthly.sort((a, b) => a.month - b.month),
+    labels = monthly.map((m) => ym(m.month)),
+    byMonth = new Map(detail.monthly.map((m) => [m.month, m.brand])),
+    otherMonth = new Map((other?.monthly || []).map((m) => [m.month, m.brand])),
+    mp = new Map((detail.monthlyPlatforms || []).map((r) => [r.name, r]));
+  const platSeries = S.plats.map((p) => ({
+    name: PLATFORMS[p],
+    color: `var(--p${p})`,
+    values: monthly.map((m) => mp.get(m.month + "|" + p)?.g ?? null),
   }));
-  const catRows = detail.byCategory
-    .sort((a, b) => b.g - a.g)
-    .map((r) => {
-      const a = totals([r.id]);
-      return `<tr><td><button class="link" data-detail="${esc(JSON.stringify(catMap.get(r.id).path))}">${esc(catMap.get(r.id).path.join(" / "))}</button></td>${cell(r.g, money)}<td>${pct(ratio(r.g, brand.g))}</td><td>${a.complete && Math.abs(yoy(r.sourceTotal, a.g) ?? Infinity) <= 0.01 ? pct(ratio(r.g, a.g)) : "—"}</td></tr>`;
+  const shareSeries = [
+    {
+      name: S.brand,
+      values: monthly.map((m) =>
+        ratio(
+          byMonth.get(m.month)?.g,
+          m.ranks.reduce((s, r) => s + r.g, 0),
+        ),
+      ),
+    },
+  ];
+  if (comparison)
+    shareSeries.push({
+      name: comparison.name,
+      values: monthly.map((m) =>
+        ratio(
+          otherMonth.get(m.month)?.g,
+          m.ranks.reduce((s, r) => s + r.g, 0),
+        ),
+      ),
+    });
+  const ph = new Map((detail.platformHistory || []).map((r) => [r.name, r])),
+    phSame = new Map((detail.platformSame || []).map((r) => [r.name, r])),
+    years = [
+      ...new Set(
+        (detail.platformHistory || []).map((r) => +r.name.split("|")[0]),
+      ),
+    ].sort((a, b) => b - a);
+  const heads = [
+    "年份",
+    ...S.plats.flatMap((p) => [
+      PLATFORMS[p] + " GMV（退后）",
+      "同比（同月份）",
+      "占品牌金额",
+      "件均价",
+    ]),
+  ];
+  const yearlyRows = years
+    .map((y) => {
+      const sum = S.plats.reduce(
+        (s, p) => s + (ph.get(y + "|" + p)?.g || 0),
+        0,
+      );
+      return `<tr><td>${y}年${y === Math.floor(S.end / 100) ? "（至" + (S.end % 100) + "月）" : ""}</td>${S.plats
+        .map((p) => {
+          const r = ph.get(y + "|" + p),
+            old = (y === Math.floor(S.end / 100) ? phSame : ph).get(
+              y - 1 + "|" + p,
+            );
+          return `<td>${money(r?.g)}</td>${cell(r && old ? yoy(r.g, old.g) : null, delta, true)}${cell(ratio(r?.g, sum), pct)}<td>¥${num(ratio(r?.g, r?.q))}</td>`;
+        })
+        .join("")}</tr>`;
     })
     .join("");
-  const yrMap = new Map(detail.yearly.map((r) => [r.name, r])),
-    sameMap = new Map(detail.yearSame.map((r) => [r.name, r]));
-  const yrRows = periods()
-    .map((P) => {
-      const y = Math.floor(P.end / 100),
-        a = yrMap.get(y + "|" + S.brand),
-        b = (
-          y === Math.floor(S.end / 100) && S.end % 100 < 12 ? sameMap : yrMap
-        ).get(y - 1 + "|" + S.brand);
-      return `<tr><td>${P.label}</td><td>${money(a?.g)}</td><td>${delta(a && b ? yoy(a.g, b.g) : null)}</td><td>${num(a?.q)}</td><td>${a ? "¥" + num(ratio(a.g, a.q)) : "—"}</td></tr>`;
+  const previousPlatforms = new Map(
+    (detail.prevByPlatform || []).map((r) => [r.name, r]),
+  );
+  const currentRows = detail.byPlatform
+    .map((r) => {
+      const old = previousPlatforms.get(r.name),
+        sh = ratio(r.g, brand.g),
+        sh0 = ratio(
+          old?.g,
+          old?.g != null ? d.prev.find((x) => x.name === brand.name)?.g : null,
+        );
+      return `<tr><td>${PLATFORMS[r.name]}</td>${cell(r.g, money)}${cell(old ? yoy(r.g, old.g) : null, delta, true)}${cell(sh, pct)}${cell(sh != null && sh0 != null ? sh - sh0 : null, (v) => delta(v, true), true)}<td>¥${num(ratio(r.g, r.q))}</td>${cell(old ? yoy(ratio(r.g, r.q), ratio(old.g, old.q)) : null, delta, true)}</tr>`;
     })
     .join("");
   $("brand-analysis").innerHTML =
-    `${S.mode === "years" ? table("brand-year-history", ["年度", "GMV（退后）", "同比（同月份）", "销量", "件均价"], yrRows) : ""}<div class="grid2"><div><h3>月度GMV（退后）</h3>${lineChart(points, "品牌月度GMV（退后）")}</div><div><h3>平台结构</h3>${barsChart(
-      detail.byPlatform.map((r) => ({ name: PLATFORMS[r.name], v: r.g })),
-      "品牌平台GMV（退后）",
-    )}</div></div><div class="section-head"><h3>品牌类目构成</h3>${exportButton("brand-categories")}</div>${table(
-      "brand-categories",
-      ["类目路径", "GMV（退后）", "占品牌金额", "类目内市占率"],
-      catRows,
-      detail.byCategory.map((r) => [
-        catMap.get(r.id).path.join("/"),
-        r.g,
-        ratio(r.g, brand.g),
-        totals([r.id]).complete &&
-        Math.abs(yoy(r.sourceTotal, totals([r.id]).g) ?? Infinity) <= 0.01
-          ? ratio(r.g, totals([r.id]).g)
-          : null,
+    section(
+      "品牌平台分布",
+      S.platView === "period" ? "当前统计时段" : "按年，当年为累计",
+      S.platView === "period"
+        ? table(
+            "brand-platforms",
+            [
+              "平台",
+              "GMV（退后）",
+              "同比",
+              "占品牌金额",
+              "占比变化",
+              "件均价",
+              "件均价同比",
+            ],
+            currentRows,
+          )
+        : table("brand-platforms", heads, yearlyRows),
+      segments("platView", S.platView || "year", [
+        ["year", "年度"],
+        ["period", "当前统计时段"],
       ]),
-    )}`;
+    ) +
+    `<div class="grid2">${section("月度GMV（退后）", "近24个月，按平台", chartFrame(seriesChart(labels, platSeries, { format: money })))}${section("月度市占率", `对比 ${esc(comparison?.name || "暂无其他品牌")} · 品牌表内同源份额`, chartFrame(seriesChart(labels, shareSeries, { line: true, format: pct })))}</div>` +
+    section(
+      "品牌类目构成",
+      "当前所选范围",
+      table(
+        "brand-categories",
+        ["类目路径", "GMV（退后）", "占品牌金额", "详情"],
+        detail.byCategory
+          .sort((a, b) => b.g - a.g)
+          .map(
+            (r) =>
+              `<tr><td>${esc(catMap.get(r.id)?.path.join(" / "))}</td>${cell(r.g, money)}${cell(ratio(r.g, brand.g), pct)}<td><button data-detail="${esc(JSON.stringify(catMap.get(r.id)?.path))}">类目详情</button></td></tr>`,
+          )
+          .join(""),
+      ),
+    );
   addBars();
   const price = await analyze("price", ids(), { brand: S.brand });
   if (t !== token) return;
-  const pg = price.bins.reduce((s, r) => s + r.g, 0),
-    bins = new Map(price.bins.map((r) => [r.name, r]));
-  $("brand-prices").innerHTML =
-    `<p class="note">商品表品牌金额 / 品牌表金额：${pct(ratio(pg, brand.g))}；价格带占比以商品表中该品牌金额为分母。</p>${table(
-      "brand-price-table",
-      ["价格带", "GMV（退后）", "占品牌商品金额", "销量"],
-      [0, 1, 2, 3, 4, 5, 6, 7, 8, -1]
-        .map((b) => {
-          const r = bins.get(b);
-          return `<tr><td>${b < 0 ? "价格缺失" : PRICE[b] + "元"}</td><td>${money(r?.g)}</td><td>${pct(r ? ratio(r.g, pg) : null)}</td><td>${num(r?.q)}</td></tr>`;
-        })
-        .join(""),
-    )}`;
+  const comparePrice = await analyze(
+    "price",
+    ids(),
+    cmp ? { brand: cmp.name } : {},
+  );
+  if (t !== token) return;
+  const mixrow = (label, v) => ({
+    label,
+    parts: [0, 1, 2, 3, 4, 5, 6, 7, 8, -1].map((b) => ({
+      name: b < 0 ? "价格缺失" : PRICE[b] + "元",
+      g: v.bins.find((r) => r.name === b)?.g,
+    })),
+  });
+  const pg = price.bins.reduce((s, r) => s + r.g, 0);
+  $("brand-prices").innerHTML = section(
+    "价格带结构",
+    `${esc(S.brand)} 对比 ${esc(cmp?.name || "行业整体")} · 商品表口径`,
+    horizontalMix([
+      mixrow(S.brand, price),
+      mixrow(cmp?.name || "行业整体", comparePrice),
+    ]) +
+      table(
+        "brand-price-table",
+        ["价格带", "GMV（退后）", "占品牌商品金额", "销量"],
+        price.bins
+          .sort((a, b) => a.name - b.name)
+          .map(
+            (r) =>
+              `<tr><td>${r.name < 0 ? "价格缺失" : PRICE[r.name] + "元"}</td>${cell(r.g, money)}${cell(ratio(r.g, pg), pct)}<td>${num(r.q)}</td></tr>`,
+          )
+          .join(""),
+      ) +
+      `<p class="note">商品表品牌金额 / 品牌表金额：${pct(ratio(pg, brand.g))}；价格结构使用商品表内部份额。</p>`,
+  );
+  addBars();
 }
-boot();

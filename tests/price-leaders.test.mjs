@@ -41,6 +41,30 @@ test("price matrices preserve exact totals and top brands across platform and ba
       for (const r of rows)
         if (isKnown(r[2]))
           brands.set(r[2], (brands.get(r[2]) || 0) + (r[4] || 0));
+      if (band == null) {
+        for (const [name, b] of Object.entries(d.mainBands || {})) {
+          const byBand = new Map();
+          for (const r of rows.filter((r) => r[2] === name))
+            byBand.set(r[3], (byBand.get(r[3]) || 0) + r[4]);
+          const max = Math.max(...byBand.values());
+          assert.ok(
+            Math.abs(byBand.get(b) - max) < 1,
+            "dominant band reconciles to raw records",
+          );
+        }
+        for (const [b, items] of Object.entries(d.bandLeaders || {})) {
+          const totals = new Map();
+          for (const r of rows.filter((r) => r[3] === +b && isKnown(r[2])))
+            totals.set(r[2], (totals.get(r[2]) || 0) + r[4]);
+          assert.deepEqual(
+            items.map((r) => r.name),
+            [...totals]
+              .sort((a, b) => b[1] - a[1])
+              .slice(0, 2)
+              .map((r) => r[0]),
+          );
+        }
+      }
       const leaders = [...brands].sort((a, b) => b[1] - a[1]);
       assert.deepEqual(
         d.top.slice(0, 5).map((r) => r.name),

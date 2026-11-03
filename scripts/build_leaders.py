@@ -11,17 +11,19 @@ def add(target,rows,mask):
 def ranks(values,n=150):
     return heapq.nlargest(n,((name,g,q) for name,(g,q) in values.items() if known(name)),key=lambda r:r[1])
 
-def compact(values,selected=None):
+def compact(values,selected=None,include_rank=True):
     top=ranks(values,150 if selected is None else 5);names={r[0] for r in top}
     if selected:names.update(selected)
     kept=sorted([(n,*values[n]) for n in names if n in values and known(n)],key=lambda r:r[1],reverse=True)
-    result=[{'name':n,'g':g,'q':q,'rank':i+1} for i,(n,g,q) in enumerate(kept)]
+    rank_map={n:i+1 for i,(n,g,q) in enumerate(ranks(values,len(values)))} if include_rank else {}
+    result=[{'name':n,'g':g,'q':q,'rank':rank_map.get(n)} for n,g,q in kept]
     result.append({'name':'其他 Other','g':sum(a[0] for a in values.values())-sum(r['g'] for r in result),'q':0})
     return result
 
-def build():
+def build(only=None):
     last=read(CACHE/'industry-meta.json')['last'];folder=CACHE/'leaders';folder.mkdir(exist_ok=True)
     for scope in read(CACHE/'scopes.json'):
+        if only and scope not in only:continue
         monthly={}
         for f in sorted((CACHE/'scopes'/'brand').glob(scope+'.*.json.gz')):
             month=int(f.name.split('.')[1])
@@ -41,7 +43,18 @@ def build():
                     if target is not None:
                         for n,(g,q) in v.items():
                             a=target.setdefault(n,[0,0]);a[0]+=g;a[1]+=q
-                cr=compact(cur);result={'cur':cr,'prev':compact(prev,{r['name'] for r in cr}),'knownCount':sum(known(n) for n in cur),'monthly':monthly_summaries,'byCategory':[],'byPlatform':[],'yearly':[],'yearSame':[]}
+                cr=compact(cur)
+                pm={}
+                for month,rows in monthly.items():
+                    if start<=month<=last:
+                        for _,p,n,g,q in rows:
+                            if mask&(1<<p):pm[(n,p)]=pm.get((n,p),0)+(g or 0)
+                for r in cr:
+                    r['platforms']=[{'p':p,'g':pm.get((r['name'],p))} for p in range(3) if mask&(1<<p)] if r['name']!='其他 Other' else []
+                detail_monthly=[]
+                names={r['name'] for r in cr[:10]}
+                for month,v in maps.items():detail_monthly.append({'month':month,'ranks':compact(v,names,False)})
+                result={'cur':cr,'prev':compact(prev,{r['name'] for r in cr}),'knownCount':sum(known(n) for n in cur),'monthly':detail_monthly,'byCategory':[],'byPlatform':[],'yearly':[],'yearSame':[]}
                 output[str(mask)+'|'+mode]=result
         (folder/(scope+'.json.gz')).write_bytes(gzip.compress(json.dumps(output,ensure_ascii=False,separators=(',',':')).encode(),compresslevel=6,mtime=0))
         print('leaders',scope,flush=True)

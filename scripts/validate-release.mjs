@@ -1,6 +1,11 @@
 import fs from "node:fs";
 import zlib from "node:zlib";
 import assert from "node:assert/strict";
+import { VERSION } from "../lib/version.js";
+const html = fs.readFileSync("index.html", "utf8");
+assert.ok(html.includes(`content="${VERSION}"`), "App version metadata mismatch");
+assert.ok(html.includes(`app.js?v=${VERSION}`), "App cache version mismatch");
+assert.ok(html.includes(`styles.css?v=${VERSION}`), "CSS cache version mismatch");
 const m = JSON.parse(fs.readFileSync("data/manifest.json", "utf8"));
 assert.equal(m.preview, false, "Do not publish preview snapshots");
 assert.equal(m.audit.industryConflicts, 0);

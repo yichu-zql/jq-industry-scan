@@ -51,5 +51,21 @@ test("common-period leaders equal full monthly scope records for every platform 
         Math.abs(sum(d.prev) - sum(previous)) < 1,
         "prior total preserved",
       );
+      const oldRanks = new Map(
+        previous.filter((r) => isKnown(r.name)).map((r, i) => [r.name, i + 1]),
+      );
+      for (const r of d.prev.filter((r) => isKnown(r.name)))
+        assert.equal(
+          r.rank,
+          oldRanks.get(r.name),
+          "prior rank is global, not rank within compact subset",
+        );
+      for (const r of d.cur.filter((r) => isKnown(r.name)))
+        assert.ok(
+          Math.abs(
+            (r.platforms || []).reduce((s, p) => s + (p.g || 0), 0) - r.g,
+          ) < 1,
+          "platform breakdown reconciles",
+        );
     }
 });
