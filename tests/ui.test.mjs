@@ -21,6 +21,9 @@ test("real snapshot: hierarchy, matrix, date, category and all six page paths", 
   t.after(async () => {
     for (const w of workers) await w.terminate();
     delete globalThis.Worker;
+    // Export toast uses a timer; let it settle before removing its DOM.
+    while (!document.querySelector("#toast").hidden)
+      await new Promise(resolve => setTimeout(resolve, 50));
     dom.window.close();
   });
   globalThis.Worker = class extends BrowserWorker {
