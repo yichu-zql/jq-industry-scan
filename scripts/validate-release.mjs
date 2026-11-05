@@ -29,7 +29,10 @@ if (m.competitionCubes)
     m.version,
     "Competition source mismatch",
   );
+if (m.report)
+  assert.equal(m.report.sourceVersion, m.version, "Report source mismatch");
 const paths = [
+  ...Object.values(m.report?.prices || {}),
   m.industry,
   m.brandIndex,
   ...Object.values(m.brandDetails || {}).flatMap((o) => Object.values(o)),

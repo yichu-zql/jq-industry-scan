@@ -1,5 +1,5 @@
-import { selectedPeriod, setYearRange } from "./lib/time-range.js?v=2.2.4";
-import { mountDistribution } from "./lib/bubble-view.js?v=2.2.4";
+import { selectedPeriod, setYearRange } from "./lib/time-range.js?v=2.3.0";
+import { mountDistribution } from "./lib/bubble-view.js?v=2.3.0";
 import {
   spark,
   segments,
@@ -10,7 +10,7 @@ import {
   installViewportTableHeaders,
   COLORS,
   brandColor,
-} from "./lib/presentation.js?v=2.2.4";
+} from "./lib/presentation.js?v=2.3.0";
 const VERSION = document.querySelector('meta[name="app-version"]').content;
 import {
   PLATFORMS,
@@ -803,7 +803,7 @@ function treeTable() {
         rows,
         exports,
       ),
-    exportButton("industry-table"),
+    `<div class="brief-entry"><button id="one-page-open" class="primary">一页纸概览</button>${exportButton("industry-table")}</div>`,
   );
 }
 function overviewYears() {
@@ -1373,6 +1373,21 @@ function resetLocal() {
 }
 document.addEventListener("table-page", () => addBarsToNew());
 document.addEventListener("click", (e) => {
+  if (e.target.closest("#one-page-open")) {
+    import("./lib/report-view.js?v=2.3.0")
+      .then(({ openBrief }) =>
+        openBrief({
+          manifest,
+          categories,
+          ids: globalIds(),
+          start: period().start,
+          end: S.end,
+          plats: [...S.plats],
+        }),
+      )
+      .catch(() => toast("概览模块加载失败，请重试"));
+    return;
+  }
   const b = e.target.closest("button");
   if (!b) return;
   if (b.dataset.setting) {

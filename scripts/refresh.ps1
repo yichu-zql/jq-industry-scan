@@ -55,6 +55,8 @@ try {
     if($LASTEXITCODE -ne 0){throw 'Distribution summary build failed'}
     & $python scripts/build_competition.py
     if($LASTEXITCODE -ne 0){throw 'Competition cube build failed'}
+    & $python scripts/build_report.py
+    if($LASTEXITCODE -ne 0){throw 'Report evidence build failed'}
     & npm.cmd run check
     if($LASTEXITCODE -ne 0){throw 'Application checks failed'}
     & node scripts/validate-release.mjs
@@ -68,8 +70,8 @@ try {
         if($diffCode -eq 1){
             & $python scripts/bump_version.py patch
             if($LASTEXITCODE -ne 0){throw 'Version bump failed'}
-            & git add -- lib/version.js lib/bubble-view.js lib/competition-worker.js index.html app.js
-            & git commit -m "Refresh Jiuqian validated data $stamp" -- data lib/version.js lib/bubble-view.js lib/competition-worker.js index.html app.js
+            & git add -- lib/version.js lib/bubble-view.js lib/competition-worker.js lib/report-view.js lib/report-worker.js index.html app.js
+            & git commit -m "Refresh Jiuqian validated data $stamp" -- data lib/version.js lib/bubble-view.js lib/competition-worker.js lib/report-view.js lib/report-worker.js index.html app.js
             if($LASTEXITCODE -ne 0){throw 'Commit failed'}
             & git push origin main
             if($LASTEXITCODE -ne 0){throw 'Push failed'}
