@@ -16,7 +16,8 @@ test("real snapshot: hierarchy, matrix, date, category and all six page paths", 
     location: dom.window.location,
   });
   const workers = [],
-    requests = [];
+    requests = [],
+    competitionResults = [];
   t.after(async () => {
     for (const w of workers) await w.terminate();
     delete globalThis.Worker;
@@ -26,6 +27,9 @@ test("real snapshot: hierarchy, matrix, date, category and all six page paths", 
     constructor(...a) {
       super(...a);
       workers.push(this);
+      this.worker.on("message", (m) => {
+        if (m.result?.mainBands) competitionResults.push(m.result);
+      });
     }
     postMessage(m) {
       requests.push(m);
@@ -222,6 +226,78 @@ test("real snapshot: hierarchy, matrix, date, category and all six page paths", 
             .length === 2,
       );
       assert.ok(document.querySelector("#competition-table"));
+      const beforeSwitch = requests.length;
+      for (const [value, checked] of [
+        [2, true],
+        [3, true],
+        [2, false],
+      ]) {
+        const checkbox = document.querySelector(
+          `[data-competition-band][value="${value}"]`,
+        );
+        checkbox.checked = checked;
+        checkbox.dispatchEvent(new dom.window.Event("change"));
+      }
+      assert.equal(
+        document.querySelector('[data-competition-band][value="0"]'),
+        band,
+        "checkbox remains mounted",
+      );
+      assert.equal(
+        document.querySelector('[data-export="competition-table"]').disabled,
+        true,
+        "stale export disabled immediately",
+      );
+      await wait(
+        () =>
+          document.querySelector("#main").getAttribute("aria-busy") ===
+            "false" &&
+          document.querySelector("#competition-results").dataset.bands ===
+            "[0,1,3]",
+      );
+      assert.equal(
+        requests.slice(beforeSwitch).filter((m) => m.type === "competition")
+          .length,
+        1,
+        "rapid changes coalesced",
+      );
+      assert.equal(
+        document.querySelector('[data-export="competition-table"]').disabled,
+        false,
+      );
+      const latest = competitionResults.at(-1);
+      const first = latest.cur
+        .filter((r) => r.name !== "其他 Other")
+        .sort((a, b) => b.g - a.g)[0];
+      assert.equal(
+        document.querySelector("#competition-table [data-brand]").dataset.brand,
+        first.name,
+      );
+      let blob;
+      const create = URL.createObjectURL,
+        anchorClick = dom.window.HTMLAnchorElement.prototype.click;
+      URL.createObjectURL = (b) => {
+        blob = b;
+        return "blob:test";
+      };
+      dom.window.HTMLAnchorElement.prototype.click = () => {};
+      document.querySelector('[data-export="competition-table"]').click();
+      URL.createObjectURL = create;
+      dom.window.HTMLAnchorElement.prototype.click = anchorClick;
+      const exported = await blob.text();
+      assert.ok(
+        exported.includes('"' + first.g + '"'),
+        "CSV retains exact numeric GMV",
+      );
+      assert.ok(
+        exported.includes(first.name.replaceAll('"', '""')),
+        "CSV contains same leading brand",
+      );
+      assert.ok(
+        !document
+          .querySelector("#competition-results")
+          .textContent.includes("加载中"),
+      );
       document.querySelector("#competition-band-clear").click();
       await wait(
         () =>

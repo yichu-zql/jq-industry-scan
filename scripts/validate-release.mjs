@@ -23,6 +23,12 @@ if (m.distribution)
     m.version,
     "Distribution source mismatch",
   );
+if (m.competitionCubes)
+  assert.equal(
+    m.competitionCubes.sourceVersion,
+    m.version,
+    "Competition source mismatch",
+  );
 const paths = [
   m.industry,
   m.brandIndex,
@@ -31,6 +37,9 @@ const paths = [
   ...Object.values(m.priceLeaders || {}),
   ...Object.values(m.insights || {}),
   ...Object.values(m.distribution?.months || {}),
+  ...Object.values(m.competitionCubes?.scopes || {}).flatMap((v) =>
+    Object.values(v),
+  ),
   ...Object.values(m.files)
     .flatMap((o) => Object.values(o))
     .flatMap((v) => (Array.isArray(v) ? v.map((r) => r.path) : [v])),

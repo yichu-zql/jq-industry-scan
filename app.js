@@ -1,5 +1,5 @@
-import { selectedPeriod, setYearRange } from "./lib/time-range.js?v=2.2.3";
-import { mountDistribution } from "./lib/bubble-view.js?v=2.2.3";
+import { selectedPeriod, setYearRange } from "./lib/time-range.js?v=2.2.4";
+import { mountDistribution } from "./lib/bubble-view.js?v=2.2.4";
 import {
   spark,
   segments,
@@ -10,7 +10,7 @@ import {
   installViewportTableHeaders,
   COLORS,
   brandColor,
-} from "./lib/presentation.js?v=2.2.3";
+} from "./lib/presentation.js?v=2.2.4";
 const VERSION = document.querySelector('meta[name="app-version"]').content;
 import {
   PLATFORMS,
@@ -67,6 +67,142 @@ const pct = (v) => (Number.isFinite(v) ? (v * 100).toFixed(1) + "%" : "—"),
       : "—";
 const cell = (v, format, signed = false) =>
   `<td class="databar" ${Number.isFinite(v) ? `data-value="${v}" data-signed="${signed}"` : ""}>${format(v)}</td>`;
+let competitionWorker = null,
+  competitionSeq = 0,
+  competitionRevision = 0,
+  competitionTimer = null,
+  competitionPending = false;
+const competitionJobs = new Map();
+function competitionPriceData(bands) {
+  if (!competitionWorker) {
+    competitionWorker = new Worker(
+      new URL("./lib/competition-worker.js?v=" + VERSION, import.meta.url),
+      { type: "module" },
+    );
+    competitionWorker.onmessage = ({ data: m }) => {
+      const job = competitionJobs.get(m.id);
+      if (!job) return;
+      if (m.progress != null) return;
+      competitionJobs.delete(m.id);
+      m.error ? job.reject(Error(m.error)) : job.resolve(m.result);
+    };
+    competitionWorker.onerror = () => {
+      for (const job of competitionJobs.values())
+        job.reject(Error("价格带分析加载失败，请重试"));
+      competitionJobs.clear();
+      competitionWorker.terminate();
+      competitionWorker = null;
+    };
+  }
+  for (const job of competitionJobs.values())
+    job.reject(new DOMException("请求已取消", "AbortError"));
+  competitionJobs.clear();
+  const list = ids(),
+    selected = new Set(list),
+    cube = manifest.competitionCubes;
+  const scope =
+    cube?.sourceVersion === manifest.version
+      ? Object.entries(manifest.scopes || {}).find(
+          ([key, v]) =>
+            cube.scopes[key] &&
+            v.ids.length === selected.size &&
+            v.ids.every((id) => selected.has(id)),
+        )
+      : null;
+  const files = scope
+    ? Object.entries(cube.scopes[scope[0]])
+        .filter(([b]) => !bands.length || bands.includes(+b))
+        .map(([, path]) => ({
+          url: new URL("./data/" + path, location.href).href,
+        }))
+    : sourcePlan("brandprice", list, false, true);
+  const id = ++competitionSeq,
+    P = period();
+  return new Promise((resolve, reject) => {
+    competitionJobs.set(id, { resolve, reject });
+    competitionWorker.postMessage({
+      type: "competition",
+      id,
+      files,
+      bands: [...bands].sort((a, b) => a - b),
+      plats: [...S.plats],
+      start: P.start,
+      end: P.end,
+      history: S.mode === "years",
+      allMainBands: bands.length === 0,
+    });
+  });
+}
+function syncCompetitionFilters() {
+  document
+    .querySelectorAll("[data-competition-band]")
+    .forEach(
+      (el) => (el.checked = (S.competitionBands || []).includes(+el.value)),
+    );
+  const note = $("competition-filter-note");
+  if (note)
+    note.textContent = (S.competitionBands || []).length
+      ? `已选 ${S.competitionBands.length} 档：合并后重排品牌，排名、趋势及CSV同步更新。`
+      : "未限定价格带：使用品牌表全价位数据。";
+}
+function markCompetitionPending() {
+  competitionPending = true;
+  $("main").setAttribute("aria-busy", "true");
+  const result = $("competition-results");
+  if (result) {
+    result.inert = true;
+    result.setAttribute("aria-busy", "true");
+    result
+      .querySelectorAll("[data-export]")
+      .forEach((b) => (b.disabled = true));
+  }
+  const status = $("competition-status");
+  if (status)
+    status.textContent = result?.children.length
+      ? "正在更新所选价格带；下方暂为上次结果，完成后同步替换。"
+      : "正在加载所选价格带…";
+}
+function scheduleCompetition() {
+  ++competitionRevision;
+  competitionWorker?.postMessage({ type: "cancel" });
+  for (const job of competitionJobs.values())
+    job.reject(new DOMException("请求已取消", "AbortError"));
+  competitionJobs.clear();
+  persist();
+  syncCompetitionFilters();
+  markCompetitionPending();
+  clearTimeout(competitionTimer);
+  const revision = competitionRevision,
+    t = token;
+  competitionTimer = setTimeout(() => {
+    if (
+      S.view === "competition" &&
+      t === token &&
+      revision === competitionRevision
+    )
+      competitionReference(t, revision);
+  }, 140);
+}
+function ensureCompetitionShell() {
+  if (!$("competition-results"))
+    $("main").innerHTML =
+      competitionFilters() +
+      '<p id="competition-status" class="note" role="status"></p><div id="competition-results"></div>';
+  syncCompetitionFilters();
+  document.querySelectorAll("[data-competition-band]").forEach(
+    (el) =>
+      (el.onchange = () => {
+        S.competitionBands = [
+          ...document.querySelectorAll("[data-competition-band]:checked"),
+        ].map((el) => +el.value);
+        scheduleCompetition();
+      }),
+  );
+  $("competition-band-clear").onclick = () => {
+    S.competitionBands = [];
+    scheduleCompetition();
+  };
+}
 const views = [
   ["overview", "行业概览"],
   ["market", "类目大盘"],
@@ -1163,6 +1299,12 @@ function method() {
   );
 }
 async function render() {
+  ++competitionRevision;
+  clearTimeout(competitionTimer);
+  competitionWorker?.postMessage({ type: "cancel" });
+  for (const job of competitionJobs.values())
+    job.reject(new DOMException("请求已取消", "AbortError"));
+  competitionJobs.clear();
   analysisWorker?.postMessage({ type: "cancel" });
   bubbleAnalysisWorker?.postMessage({ type: "cancel" });
   for (const job of analysisJobs.values())
@@ -1173,6 +1315,7 @@ async function render() {
   activeController = new AbortController();
   pendingFiles = new Map();
   const t = ++token;
+  const renderCompetitionRevision = competitionRevision;
   const renderStarted = performance.now();
   renderStartedAt = renderStarted;
   $("main").dataset.longTaskMs = "0";
@@ -1194,6 +1337,11 @@ async function render() {
     else if (S.view === "competition") await competitionReference(t);
     else if (S.view === "brand") await brandReference(t);
     else method();
+    if (
+      S.view === "competition" &&
+      renderCompetitionRevision !== competitionRevision
+    )
+      return;
     if (t === token) {
       $("main").setAttribute("aria-busy", "false");
       $("main").dataset.renderMs = (performance.now() - renderStarted).toFixed(
@@ -1277,6 +1425,8 @@ document.addEventListener("click", (e) => {
     render();
   }
   if (b.dataset.export) {
+    if (S.view === "competition" && competitionPending)
+      return toast("筛选结果正在更新，完成后可导出");
     const rows = exportTables.get(b.dataset.export);
     if (!rows) return toast("数据仍在加载，请稍后导出");
     const scope = [
@@ -2221,13 +2371,35 @@ function competitionFilters() {
     })
     .join(
       "",
-    )}<button id="competition-band-clear">全部价格带</button><p class="note">${chosen.length ? `已选 ${chosen.length} 档：按所选价格带商品数据合并重排品牌，影响排名、份额、趋势及CSV。` : "未限定价格带：使用品牌表全价位数据。"}</p></fieldset>`;
+    )}<button id="competition-band-clear">全部价格带</button><p id="competition-filter-note" class="note">${chosen.length ? `已选 ${chosen.length} 档：按所选价格带商品数据合并重排品牌，影响排名、份额、趋势及CSV。` : "未限定价格带：使用品牌表全价位数据。"}</p></fieldset>`;
 }
-async function competitionReference(t) {
-  loadingDetails("竞品格局");
-  const bands = S.competitionBands || [];
-  const d = await analyze("brand", ids(), { bands });
-  if (t !== token) return;
+async function competitionReference(t, revision = competitionRevision) {
+  ensureCompetitionShell();
+  markCompetitionPending();
+  const started = performance.now();
+  try {
+    await fillCompetition(t, revision);
+    if (t === token && revision === competitionRevision) {
+      $("main").setAttribute("aria-busy", "false");
+      $("main").dataset.view = "competition";
+      $("main").dataset.renderMs = (performance.now() - started).toFixed(1);
+    }
+  } catch (e) {
+    if (t !== token || revision !== competitionRevision) return;
+    $("competition-status").innerHTML =
+      `更新失败：${esc(e.message)} <button id="competition-retry">重试</button>`;
+    $("competition-retry").onclick = () =>
+      competitionReference(token, competitionRevision);
+    $("main").setAttribute("aria-busy", "false");
+  }
+}
+async function fillCompetition(t, revision) {
+  const bands = [...(S.competitionBands || [])];
+  const priceJob = competitionPriceData(bands);
+  const [d, prices] = bands.length
+    ? await priceJob.then((p) => [p, p])
+    : await Promise.all([analyze("brand", ids()), priceJob]);
+  if (t !== token || revision !== competitionRevision) return;
   const total = totals(),
     prior = prevTotals(),
     c = concentration(d.cur, total.g),
@@ -2248,6 +2420,22 @@ async function competitionReference(t) {
       "主力价格带",
       "平台构成",
     ];
+  const history =
+    S.mode === "years"
+      ? bands.length
+        ? d
+        : await analyze("brand", ids(), {
+            yearlyNames: top.map((r) => r.name),
+            history: true,
+          })
+      : null;
+  if (t !== token || revision !== competitionRevision) return;
+  const mainBand = (name) =>
+    prices.mainBands?.[name] == null
+      ? "商品表无对应记录"
+      : prices.mainBands[name] < 0
+        ? "价格缺失"
+        : PRICE[prices.mainBands[name]] + "元";
   const ex = [];
   const rows = known
     .slice(0, 100)
@@ -2265,10 +2453,10 @@ async function competitionReference(t) {
         sh,
         change,
         ratio(r.g, r.q),
-        null,
+        mainBand(r.name),
         mix.map((x) => PLATFORMS[x.p] + " " + pct(ratio(x.g, r.g))).join("/"),
       ]);
-      return `<tr><td>${r.rank || i + 1} <small>${old?.rank ? (old.rank > (r.rank || i + 1) ? "↑" + (old.rank - (r.rank || i + 1)) : old.rank < (r.rank || i + 1) ? "↓" + ((r.rank || i + 1) - old.rank) : "") : ""}</small></td><td><button class="link" data-brand="${esc(r.name)}">${esc(r.name)}</button></td>${cell(r.g, money)}${cell(old ? yoy(r.g, old.g) : null, delta, true)}${cell(sh, pct)}${cell(change, (v) => delta(v, true), true)}<td>¥${num(ratio(r.g, r.q))}</td><td data-main-band="${esc(r.name)}">加载中…</td><td>${mix.map((x) => `<span class="platform-value" style="color:var(--p${x.p})" title="${PLATFORMS[x.p]}">${pct(ratio(x.g, r.g))}</span>`).join(" / ") || "—"}</td></tr>`;
+      return `<tr><td>${r.rank || i + 1} <small>${old?.rank ? (old.rank > (r.rank || i + 1) ? "↑" + (old.rank - (r.rank || i + 1)) : old.rank < (r.rank || i + 1) ? "↓" + ((r.rank || i + 1) - old.rank) : "") : ""}</small></td><td><button class="link" data-brand="${esc(r.name)}">${esc(r.name)}</button></td>${cell(r.g, money)}${cell(old ? yoy(r.g, old.g) : null, delta, true)}${cell(sh, pct)}${cell(change, (v) => delta(v, true), true)}<td>¥${num(ratio(r.g, r.q))}</td><td data-main-band="${esc(r.name)}">${esc(mainBand(r.name))}</td><td>${mix.map((x) => `<span class="platform-value" style="color:var(--p${x.p})" title="${PLATFORMS[x.p]}">${pct(ratio(x.g, r.g))}</span>`).join(" / ") || "—"}</td></tr>`;
     })
     .join("");
   const series = top.map((r, i) => ({
@@ -2284,8 +2472,7 @@ async function competitionReference(t) {
         : null;
     }),
   }));
-  $("main").innerHTML =
-    competitionFilters() +
+  $("competition-results").innerHTML =
     conclusion(
       lead
         ? `${ym(period().start)}—${ym(S.end)} <b>${esc(lead.name)}</b> 以 ${pct(ratio(lead.g, c.denominator))} 的${bands.length ? "所选价格带商品表内" : "品牌表内"}市占率排名第一；CR5 <b>${pct(c.cr5)}</b>，同比变化 ${delta(c.cr5 != null && c0.cr5 != null ? c.cr5 - c0.cr5 : null, true)}。`
@@ -2318,51 +2505,9 @@ async function competitionReference(t) {
         ["bar", "堆积柱状图"],
       ]),
     );
-  document.querySelectorAll("[data-competition-band]").forEach(
-    (el) =>
-      (el.onchange = () => {
-        S.competitionBands = [
-          ...document.querySelectorAll("[data-competition-band]:checked"),
-        ].map((el) => +el.value);
-        render();
-      }),
-  );
-  $("competition-band-clear").onclick = () => {
-    S.competitionBands = [];
-    render();
-  };
-  addBars();
-  const prices = await analyze("price", ids(), {
-    bands,
-    lookupNames: known.slice(0, 100).map((r) => r.name),
-  });
-  if (t !== token) return;
-  document.querySelectorAll("[data-main-band]").forEach((el) => {
-    const r = prices.top.find((x) => x.name === el.dataset.mainBand);
-    const mapped = prices.mainBands?.[el.dataset.mainBand];
-    const best =
-      mapped != null
-        ? [mapped]
-        : r
-          ? Object.entries(r.bands).sort((a, b) => b[1] - a[1])[0]
-          : null;
-    el.textContent = best
-      ? +best[0] < 0
-        ? "价格缺失"
-        : PRICE[+best[0]] + "元"
-      : "商品表无对应记录";
-    const row = ex.find((x) => x[1] === el.dataset.mainBand);
-    if (row) row[7] = el.textContent;
-  });
   if (S.mode === "years") {
-    const history = await analyze("brand", ids(), {
-      bands,
-      yearlyNames: top.map((r) => r.name),
-      history: true,
-    });
-    if (t !== token) return;
     const map = new Map(history.yearly.map((r) => [r.name, r]));
-    $("main").insertAdjacentHTML(
+    $("competition-results").insertAdjacentHTML(
       "beforeend",
       section(
         "历年品牌格局",
@@ -2381,11 +2526,32 @@ async function competitionReference(t) {
                   .join("")}</tr>`,
             )
             .join(""),
+          top.map((r) => [
+            r.name,
+            ...periods().map(
+              (p) => map.get(Math.floor(p.end / 100) + "|" + r.name)?.g ?? null,
+            ),
+          ]),
         ),
       ),
     );
     paginateTables();
   }
+  addBars();
+  paginateTables();
+  const result = $("competition-results");
+  result.inert = false;
+  result.setAttribute("aria-busy", "false");
+  result.dataset.bands = JSON.stringify(bands);
+  competitionPending = false;
+  $("competition-status").textContent =
+    "已更新：" +
+    (bands.length
+      ? bands
+          .map((b) => (b < 0 ? "价格缺失 / 非正" : PRICE[b] + "元"))
+          .join("、")
+      : "全部价格带") +
+    "；排名、图表和导出范围一致。";
 }
 async function brandReference(t) {
   loadingDetails("品牌深挖");

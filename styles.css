@@ -1044,3 +1044,14 @@ body:has(main[aria-busy="true"]) .range::after {
 #year-controls[hidden] {
   display: none;
 }
+#competition-results[aria-busy="true"] {
+  opacity: 0.55;
+  pointer-events: none;
+}
+#competition-status {
+  min-height: 1.5em;
+  margin: 8px 0 16px;
+}
+#competition-results {
+  transition: opacity 0.1s;
+}
