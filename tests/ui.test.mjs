@@ -15,7 +15,8 @@ test("real snapshot: hierarchy, matrix, date, category and all six page paths", 
     localStorage: dom.window.localStorage,
     location: dom.window.location,
   });
-  const workers = [];
+  const workers = [],
+    requests = [];
   t.after(async () => {
     for (const w of workers) await w.terminate();
     delete globalThis.Worker;
@@ -25,6 +26,10 @@ test("real snapshot: hierarchy, matrix, date, category and all six page paths", 
     constructor(...a) {
       super(...a);
       workers.push(this);
+    }
+    postMessage(m) {
+      requests.push(m);
+      super.postMessage(m);
     }
   };
   dom.window.scrollTo = () => {};
@@ -55,6 +60,65 @@ test("real snapshot: hierarchy, matrix, date, category and all six page paths", 
     "real distribution data loads",
   );
   assert.ok(document.querySelector("#distribution svg [data-point]"));
+  const initialEnd = document.querySelector("#end").value;
+  const requestStart = requests.length;
+  document.querySelector("#end").value = "2025-12";
+  document
+    .querySelector("#end")
+    .dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+  await wait(
+    () =>
+      document.querySelector("#main").getAttribute("aria-busy") === "false" &&
+      document.querySelector("#distribution svg"),
+  );
+  assert.ok(
+    requests
+      .slice(requestStart)
+      .some((m) => m.type === "load" && m.url.includes("/distribution/")),
+  );
+  assert.ok(
+    !requests.slice(requestStart).some((m) => m.distribution),
+    "historical overview does not aggregate raw brand rows",
+  );
+  const beforeDrill = requests.length;
+  const root = document.querySelector("#bubble-root");
+  root.value = "个护仪器";
+  root.dispatchEvent(new dom.window.Event("change"));
+  await wait(() => document.querySelector("#distribution svg"));
+  assert.ok(
+    !requests
+      .slice(beforeDrill)
+      .some((m) => m.type === "load" || m.distribution),
+    "second level reuses the loaded monthly summary",
+  );
+  assert.equal(
+    document.querySelectorAll(".bubble-details tbody").length,
+    0,
+    "details are lazy",
+  );
+  t.diagnostic(
+    "Historical second-level distribution local load: " +
+      document.querySelector("#distribution").dataset.loadMs +
+      " ms",
+  );
+  const beforeRange = requests.length;
+  const range = document.querySelector("#bubble-range");
+  range.value = "high";
+  range.dispatchEvent(new dom.window.Event("change"));
+  assert.equal(
+    requests.length,
+    beforeRange,
+    "CR5 filtering performs no data request or worker computation",
+  );
+  document.querySelector("#end").value = initialEnd;
+  document
+    .querySelector("#end")
+    .dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+  await wait(
+    () =>
+      document.querySelector("#main").getAttribute("aria-busy") === "false" &&
+      document.querySelector("#distribution svg"),
+  );
   assert.equal(document.querySelectorAll(".matrix button").length, 24);
   assert.ok(
     document
@@ -169,6 +233,36 @@ test("real snapshot: hierarchy, matrix, date, category and all six page paths", 
   }
   document.querySelector('[data-view="market"]').click();
   const mode = document.querySelector("#mode");
+  mode.value = "years";
+  mode.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+  await wait(
+    () =>
+      document.querySelector("#market-years") &&
+      document.querySelector("#main").getAttribute("aria-busy") === "false",
+  );
+  assert.equal(document.querySelector("#year-controls").hidden, false);
+  assert.equal(document.querySelector("#start").closest("label").hidden, true);
+  const ys = document.querySelector("#year-start");
+  ys.value = "2023";
+  ys.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+  await wait(
+    () => document.querySelector("#main").getAttribute("aria-busy") === "false",
+  );
+  const ye = document.querySelector("#year-end");
+  ye.value = "2025";
+  ye.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+  await wait(
+    () => document.querySelector("#main").getAttribute("aria-busy") === "false",
+  );
+  assert.equal(document.querySelector("#mode").value, "years");
+  assert.equal(document.querySelector("#start").value, "2023-01");
+  assert.equal(document.querySelector("#end").value, "2025-12");
+  assert.equal(document.querySelectorAll("#market-years tbody tr").length, 3);
+  assert.ok(
+    !document.querySelector("#market-years").textContent.includes("2022"),
+  );
+  assert.match(document.querySelector("#range").textContent, /2023-01—2025-12/);
+
   mode.value = "month";
   mode.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
   assert.equal(

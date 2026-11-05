@@ -1019,3 +1019,28 @@ body:has(main[aria-busy="true"]) .range::after {
     padding: 5px 8px;
   }
 }
+.sea-legend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin: 12px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.sea-legend i {
+  display: inline-block;
+  width: 110px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1px solid #8883;
+}
+.sea-legend small {
+  margin-right: 16px;
+}
+.bubble-detail-body {
+  margin-top: 8px;
+}
+#year-controls[hidden] {
+  display: none;
+}

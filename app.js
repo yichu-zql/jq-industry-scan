@@ -1,4 +1,5 @@
-import { mountDistribution } from "./lib/bubble-view.js?v=2.2.1";
+import { selectedPeriod, setYearRange } from "./lib/time-range.js?v=2.2.2";
+import { mountDistribution } from "./lib/bubble-view.js?v=2.2.2";
 import {
   spark,
   segments,
@@ -9,7 +10,7 @@ import {
   installViewportTableHeaders,
   COLORS,
   brandColor,
-} from "./lib/presentation.js?v=2.2.1";
+} from "./lib/presentation.js?v=2.2.2";
 const VERSION = document.querySelector('meta[name="app-version"]').content;
 import {
   PLATFORMS,
@@ -103,6 +104,30 @@ if (globalThis.PerformanceObserver) {
 }
 const leaderCache = new Map();
 const insightCache = new Map();
+const distributionSummaryCache = new Map(),
+  distributionResultCache = new Map(),
+  distributionMetricCache = new Map();
+let distributionNodeIds = new Map(),
+  bubbleAnalysisWorker = null;
+function distributionSummary(end) {
+  const path =
+    manifest.distribution?.sourceVersion === manifest.version &&
+    manifest.distribution.months?.[end];
+  if (!path) return Promise.resolve(null);
+  if (!distributionSummaryCache.has(path)) {
+    const pending = jsonFile("./data/" + path, undefined, true).catch((e) => {
+      distributionSummaryCache.delete(path);
+      throw e;
+    });
+    distributionSummaryCache.set(path, pending);
+    while (distributionSummaryCache.size > 4)
+      distributionSummaryCache.delete(
+        distributionSummaryCache.keys().next().value,
+      );
+  }
+  return distributionSummaryCache.get(path);
+}
+
 let initialInsightPromise = null;
 const fileCache = new Map(),
   exportTables = new Map();
@@ -157,7 +182,7 @@ function toast(text) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => ($("toast").hidden = true), 3500);
 }
-async function jsonFile(url, signal) {
+async function jsonFile(url, signal, persistent = false) {
   if (dataWorker) {
     const id = ++dataSeq;
     return new Promise((resolve, reject) => {
@@ -176,6 +201,7 @@ async function jsonFile(url, signal) {
       });
       dataWorker.postMessage({
         type: "load",
+        persistent,
         id,
         url: new URL(url, location.href).href,
       });
@@ -286,24 +312,20 @@ function normalizeScope() {
   S.cats = list.filter((id) => catMap.get(id).path[0] === root);
 }
 function period() {
-  let start = S.start;
-  if (S.mode === "mat") start = shift(S.end, -11);
-  if (S.mode === "month") start = S.end;
-  if (["ytd", "years"].includes(S.mode))
-    start = Math.floor(S.end / 100) * 100 + 1;
-  return { start, end: S.end };
+  return selectedPeriod(S, manifest.first);
 }
+
 function periods() {
   if (S.mode !== "years")
     return [{ ...period(), label: ym(period().start) + "—" + ym(S.end) }];
   const out = [];
   for (
-    let y = Math.floor(manifest.first / 100);
+    let y = Math.floor(period().start / 100);
     y <= Math.floor(S.end / 100);
     y++
   )
     out.push({
-      start: y * 100 + 1,
+      start: Math.max(manifest.first, y * 100 + 1),
       end: y === Math.floor(S.end / 100) ? S.end : y * 100 + 12,
       label:
         y +
@@ -484,6 +506,23 @@ function syncControls() {
   $("end").value = ym(S.end);
   $("mode").value = S.mode;
   $("start").disabled = S.mode !== "custom";
+  $("start").closest("label").hidden = S.mode === "years";
+  $("end").closest("label").hidden = S.mode === "years";
+  $("year-controls").hidden = S.mode !== "years";
+  const firstYear = Math.floor(manifest.first / 100),
+    lastYear = Math.floor(manifest.last / 100),
+    endYear = Math.floor(S.end / 100);
+  const yearOptions = (from, to, selected) =>
+    Array.from({ length: to - from + 1 }, (_, i) => {
+      const y = from + i;
+      return `<option value="${y}" ${y === selected ? "selected" : ""}>${y}年${y === lastYear && manifest.last % 100 < 12 ? "（截至" + (manifest.last % 100) + "月）" : ""}</option>`;
+    }).join("");
+  $("year-start").innerHTML = yearOptions(
+    firstYear,
+    endYear,
+    Math.floor(p.start / 100),
+  );
+  $("year-end").innerHTML = yearOptions(firstYear, lastYear, endYear);
   $("start").min = ym(manifest.first);
   $("start").max = ym(S.end);
   $("end").min = ym(manifest.first);
@@ -507,7 +546,7 @@ function syncControls() {
   $("overview-all").classList.toggle("active", S.overviewAll);
   const y = lastFullYear(S.end);
   $("range").textContent =
-    `久谦 · GMV（退后）｜当前统计 ${ym(p.start)}—${ym(S.end)}${S.mode === "years" ? "（历年表逐年展示）" : ""}｜${S.plats.map((p) => PLATFORMS[p]).join(" / ") || "未选择平台"}｜类目：${S.view === "overview" && S.overviewAll ? "全部类目" : $("category-button").textContent}｜数据截至 ${ym(manifest.last)}｜增长判断 ${y - 2}—${y}`;
+    `久谦 · GMV（退后）｜当前统计 ${ym(p.start)}—${ym(S.end)}${S.mode === "years" ? "（所选年份合计；各年明细单独展示，末年按已有月份）" : ""}｜${S.plats.map((p) => PLATFORMS[p]).join(" / ") || "未选择平台"}｜类目：${S.view === "overview" && S.overviewAll ? "全部类目" : $("category-button").textContent}｜数据截至 ${ym(manifest.last)}｜增长判断 ${y - 2}—${y}`;
 }
 function picker() {
   const tree = $("category-tree"),
@@ -825,6 +864,7 @@ async function overview(t) {
       `<label><input id="only-growth" type="checkbox" ${S.only ? "checked" : ""}>只看入选增长品类</label>`,
     );
   addBars();
+  mountOverviewDistribution(t);
   const part = rows.slice(S.page * 10, S.page * 10 + 10);
   try {
     let data;
@@ -869,24 +909,14 @@ async function overview(t) {
       );
     }
   }
+}
+function mountOverviewDistribution(t) {
   if (t === token)
     mountDistribution($("distribution"), {
       categories: ids().map((id) => catMap.get(id)),
       end: S.end,
       plats: S.plats,
-      aggregate: (list) => {
-        const a = totals(list, shift(S.end, -11), S.end),
-          c = comparable(list, shift(S.end, -11), S.end);
-        return {
-          g: a.g,
-          y: yoy(c.cur.g, c.prev.g),
-          coverage: compCoverage(
-            c,
-            a,
-            prevTotals(list, shift(S.end, -11), S.end),
-          ),
-        };
-      },
+      aggregateGroups: distributionMetrics,
       request: distributionRequest,
       money,
       pct,
@@ -894,7 +924,95 @@ async function overview(t) {
       isCurrent: () => t === token,
     });
 }
-async function distributionRequest(groups, price = false) {
+async function distributionMetrics(groups) {
+  const key = JSON.stringify([S.end, S.plats, groups.map((g) => g.ids)]);
+  if (distributionMetricCache.has(key)) return distributionMetricCache.get(key);
+  const end = S.end,
+    start = shift(end, -11),
+    plats = [...S.plats];
+  const promise = metricsWorker
+    ? new Promise((resolve, reject) => {
+        const id = ++workerSeq;
+        workerJobs.set(id, { resolve, reject });
+        metricsWorker.postMessage({
+          type: "distribution",
+          id,
+          groups: groups.map((g) => g.ids),
+          plats,
+          start,
+          end,
+        });
+      })
+    : Promise.resolve(
+        groups.map((g) => {
+          const a = totals(g.ids, start, end),
+            b = prevTotals(g.ids, start, end),
+            c = comparable(g.ids, start, end);
+          return {
+            g: a.g,
+            y: yoy(c.cur.g, c.prev.g),
+            coverageCur: ratio(c.cur.g, a.g),
+            coveragePrev: ratio(c.prev.g, b.g),
+          };
+        }),
+      );
+  const result = promise
+    .then((rows) =>
+      rows.map((r) => ({
+        ...r,
+        coverage:
+          "可比覆盖：本期 " +
+          pct(r.coverageCur) +
+          " / 上期 " +
+          pct(r.coveragePrev),
+      })),
+    )
+    .catch((e) => {
+      distributionMetricCache.delete(key);
+      throw e;
+    });
+  distributionMetricCache.set(key, result);
+  while (distributionMetricCache.size > 24)
+    distributionMetricCache.delete(distributionMetricCache.keys().next().value);
+  return result;
+}
+function distributionRequest(groups, price = false) {
+  const key = JSON.stringify([S.end, S.plats, price, groups]);
+  if (!distributionResultCache.has(key)) {
+    const promise = loadDistribution(groups, price).catch((e) => {
+      distributionResultCache.delete(key);
+      throw e;
+    });
+    distributionResultCache.set(key, promise);
+    while (distributionResultCache.size > 24)
+      distributionResultCache.delete(
+        distributionResultCache.keys().next().value,
+      );
+  }
+  return distributionResultCache.get(key);
+}
+async function loadDistribution(groups, price = false) {
+  const end = S.end,
+    mask = S.plats.reduce((a, p) => a | (1 << p), 0);
+  if (
+    !price &&
+    groups.every((g) => {
+      const full = distributionNodeIds.get(JSON.stringify(g.path));
+      return (
+        full && full.size === g.ids.length && g.ids.every((id) => full.has(id))
+      );
+    })
+  ) {
+    const summary = await distributionSummary(end);
+    if (summary)
+      return groups.map((g, i) => ({
+        key: i,
+        cr5: summary[JSON.stringify(g.path)]?.[mask - 1] ?? null,
+      }));
+  }
+  if (end !== S.end || mask !== S.plats.reduce((a, p) => a | (1 << p), 0))
+    throw new DOMException("请求已取消", "AbortError");
+
   if (
     !price &&
     groups.every((g) => g.ids.length === 1) &&
@@ -946,9 +1064,13 @@ async function distributionRequest(groups, price = false) {
       history: true,
       start: shift(S.end, -11),
       files: groups.flatMap((g, i) =>
-        sourcePlan(price ? "brandprice" : "brand", g.ids, false, true).map(
-          (f) => ({ ...f, group: i }),
-        ),
+        sourcePlan(
+          price ? "brandprice" : "brand",
+          g.ids,
+          false,
+          true,
+          shift(S.end, -23),
+        ).map((f) => ({ ...f, group: i })),
       ),
     },
   );
@@ -1042,6 +1164,7 @@ function method() {
 }
 async function render() {
   analysisWorker?.postMessage({ type: "cancel" });
+  bubbleAnalysisWorker?.postMessage({ type: "cancel" });
   for (const job of analysisJobs.values())
     job.reject(new DOMException("请求已取消", "AbortError"));
   analysisJobs.clear();
@@ -1233,9 +1356,33 @@ document.addEventListener("click", (e) => {
 document.addEventListener("change", (e) => {
   const el = e.target;
   if (el.id === "mode") {
-    const previous = period();
+    const previous = period(),
+      previousMode = S.mode;
     S.mode = el.value;
-    S.start = S.mode === "custom" ? previous.start : period().start;
+    if (S.mode === "years") {
+      setYearRange(
+        S,
+        manifest.first,
+        manifest.last,
+        S.yearsStart || Math.floor(manifest.first / 100),
+        Math.floor(S.end / 100),
+      );
+      S.gran = "y";
+    } else {
+      S.start = S.mode === "custom" ? previous.start : period().start;
+      if (previousMode === "years") S.gran = "m";
+    }
+    resetLocal();
+    render();
+  }
+  if (el.id === "year-start" || el.id === "year-end") {
+    setYearRange(
+      S,
+      manifest.first,
+      manifest.last,
+      +$("year-start").value,
+      +$("year-end").value,
+    );
     resetLocal();
     render();
   }
@@ -1458,9 +1605,17 @@ async function boot() {
       });
       initialInsightPromise.catch(() => {});
     }
+    distributionSummary(initialEnd).catch(() => {});
     industry = await jsonFile("./data/" + manifest.industry);
     categories = industry.categories;
     catMap = new Map(categories.map((c) => [c.id, c]));
+    for (const c of categories)
+      for (let depth = 1; depth <= 3; depth++) {
+        const key = JSON.stringify(c.path.slice(0, depth));
+        if (!distributionNodeIds.has(key))
+          distributionNodeIds.set(key, new Set());
+        distributionNodeIds.get(key).add(c.id);
+      }
     index = indexIndustry(industry.rows);
     metricsWorker?.postMessage({ type: "init", rows: industry.rows });
     S.end = Math.min(
@@ -1516,7 +1671,7 @@ function setupAnalysisWorker() {
     analysisWorker = null;
   };
 }
-function sourcePlan(kind, list, raw = false, history = false) {
+function sourcePlan(kind, list, raw = false, history = false, from = null) {
   const remaining = new Set(list),
     chosen = [];
   if (!raw) {
@@ -1534,11 +1689,13 @@ function sourcePlan(kind, list, raw = false, history = false) {
   }
   chosen.push(...remaining);
   const P = period(),
-    min = history
-      ? manifest.first
-      : kind === "brand"
-        ? Math.min(shift(P.start, -12), shift(P.end, -23))
-        : P.start;
+    min =
+      from ??
+      (history
+        ? manifest.first
+        : kind === "brand"
+          ? Math.min(shift(P.start, -12), shift(P.end, -23))
+          : P.start);
   return chosen
     .filter((id) => manifest.files[kind]?.[id])
     .flatMap((id) => {
@@ -1634,8 +1791,28 @@ async function analyze(kind, list, extra = {}, raw = false) {
       : null;
   const id = ++analysisSeq;
   return new Promise((resolve, reject) => {
-    analysisJobs.set(id, { resolve, reject });
-    analysisWorker.postMessage({
+    analysisJobs.set(id, {
+      resolve,
+      reject,
+      distribution: !!extra.distribution,
+    });
+    if (extra.distribution && !bubbleAnalysisWorker) {
+      bubbleAnalysisWorker = new Worker(
+        new URL("./lib/analysis-worker.js?v=" + VERSION, import.meta.url),
+        { type: "module" },
+      );
+      bubbleAnalysisWorker.onmessage = analysisWorker.onmessage;
+      bubbleAnalysisWorker.onerror = () => {
+        for (const [jobId, job] of analysisJobs)
+          if (job.distribution) {
+            job.reject(Error("分布分析线程加载失败，请重试"));
+            analysisJobs.delete(jobId);
+          }
+        bubbleAnalysisWorker.terminate();
+        bubbleAnalysisWorker = null;
+      };
+    }
+    (extra.distribution ? bubbleAnalysisWorker : analysisWorker).postMessage({
       type: "analyze",
       id,
       kind,
@@ -1670,11 +1847,41 @@ function conclusion(text) {
 function chartFrame(html) {
   return `<div class="chart-frame">${html}</div>`;
 }
+function marketYears() {
+  if (S.mode !== "years") return "";
+  const rows = periods().map((P) => {
+    const a = totals(ids(), P.start, P.end),
+      c = comparable(ids(), P.start, P.end);
+    return {
+      label: P.label,
+      g: a.present ? a.g : null,
+      q: a.qtyValid && a.present ? a.q : null,
+      y: yoy(c.cur.g, c.prev.g),
+      asp: a.qtyValid ? ratio(a.g, a.q) : null,
+    };
+  });
+  return section(
+    "所选类目历年比较",
+    "各年独立汇总；最近一年仅含已有月份，同比按上年相同月份比较",
+    table(
+      "market-years",
+      ["年份", "GMV（退后）", "同比（可比）", "销量（件）", "件均价"],
+      rows
+        .map(
+          (r) =>
+            `<tr><td>${r.label}</td><td>${money(r.g)}</td><td>${delta(r.y)}</td><td>${money(r.q)}</td><td>${num(r.asp)}</td></tr>`,
+        )
+        .join(""),
+      rows.map((r) => [r.label, r.g, r.y, r.q, r.asp]),
+    ),
+    exportButton("market-years"),
+  );
+}
 async function marketReference(t) {
   const a = totals(),
     b = prevTotals(),
     c = comparable(),
-    ms = months(Math.max(manifest.first, shift(S.end, -35)), S.end),
+    ms = months(Math.max(manifest.first, period().start), S.end),
     monthly = ms.map((m) => totals(ids(), m, m));
   const tiny = monthly.slice(-13),
     g = ratio(a.g, a.q),
@@ -1788,9 +1995,10 @@ async function marketReference(t) {
       `${esc(scope)} ${ym(period().start)}—${ym(S.end)}，GMV（退后）<b>${money(a.g)}</b>，可比同比 <b>${delta(yoy(c.cur.g, c.prev.g))}</b>；件均价 ¥${num(g)}。`,
     ) +
     `<div class="kpis">${stats}</div>` +
+    marketYears() +
     section(
       "销售趋势",
-      `${gran === "m" ? "近36个月" : gran === "q" ? "季度汇总" : "年度汇总"} · 截至 ${ym(S.end)}；未满季度或年度按已选截止月，悬浮或聚焦图形查看数值`,
+      `${gran === "m" ? "月度" : gran === "q" ? "季度汇总" : "年度汇总"} · ${ym(period().start)}—${ym(S.end)}；未满季度或年度按已选截止月，悬浮或聚焦图形查看数值`,
       chartFrame(
         seriesChart(
           buckets.map((x) => x.key),
@@ -1867,13 +2075,19 @@ async function priceReference(t) {
   const rows = bands.map((b) => ({ b, a: cur.get(b), z: prev.get(b) })),
     top = rows.filter((r) => r.a).sort((a, b) => b.a.g - a.a.g)[0];
   const migration = [];
-  for (let k = 3; k >= 0; k--) {
-    const start = shift(P.start, -12 * k),
-      end = shift(P.end, -12 * k);
-    if (start < manifest.first) continue;
-    const bins = priceSum(parts, { start, end });
+  const ranges =
+    S.mode === "years"
+      ? periods()
+      : [3, 2, 1, 0]
+          .map((k) => ({
+            start: shift(P.start, -12 * k),
+            end: shift(P.end, -12 * k),
+          }))
+          .filter((p) => p.start >= manifest.first);
+  for (const range of ranges) {
+    const bins = priceSum(parts, range);
     migration.push({
-      label: ym(start) + "—" + ym(end),
+      label: range.label || ym(range.start) + "—" + ym(range.end),
       parts: bands.map((b) => ({ name: name(b), band: b, g: bins.get(b)?.g })),
     });
   }

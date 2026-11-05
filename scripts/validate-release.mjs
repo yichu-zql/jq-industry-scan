@@ -3,21 +3,34 @@ import zlib from "node:zlib";
 import assert from "node:assert/strict";
 import { VERSION } from "../lib/version.js";
 const html = fs.readFileSync("index.html", "utf8");
-assert.ok(html.includes(`content="${VERSION}"`), "App version metadata mismatch");
+assert.ok(
+  html.includes(`content="${VERSION}"`),
+  "App version metadata mismatch",
+);
 assert.ok(html.includes(`app.js?v=${VERSION}`), "App cache version mismatch");
-assert.ok(html.includes(`styles.css?v=${VERSION}`), "CSS cache version mismatch");
+assert.ok(
+  html.includes(`styles.css?v=${VERSION}`),
+  "CSS cache version mismatch",
+);
 const m = JSON.parse(fs.readFileSync("data/manifest.json", "utf8"));
 assert.equal(m.preview, false, "Do not publish preview snapshots");
 assert.equal(m.audit.industryConflicts, 0);
 for (const kind of ["brand", "price", "brandprice"])
   assert.ok(Object.keys(m.files[kind] || {}).length > 0, kind + " missing");
+if (m.distribution)
+  assert.equal(
+    m.distribution.sourceVersion,
+    m.version,
+    "Distribution source mismatch",
+  );
 const paths = [
   m.industry,
   m.brandIndex,
-  ...Object.values(m.brandDetails || {}).flatMap(o=>Object.values(o)),
+  ...Object.values(m.brandDetails || {}).flatMap((o) => Object.values(o)),
   ...Object.values(m.leaders || {}),
   ...Object.values(m.priceLeaders || {}),
   ...Object.values(m.insights || {}),
+  ...Object.values(m.distribution?.months || {}),
   ...Object.values(m.files)
     .flatMap((o) => Object.values(o))
     .flatMap((v) => (Array.isArray(v) ? v.map((r) => r.path) : [v])),

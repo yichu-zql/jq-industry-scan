@@ -2,7 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { Worker } from "node:worker_threads";
 import { JSDOM } from "jsdom";
-import { distributionAccumulator, seaColor } from "../lib/distribution.js";
+import {
+  distributionAccumulator,
+  seaColor,
+  inCr5Range,
+} from "../lib/distribution.js";
 import { mountDistribution } from "../lib/bubble-view.js";
 
 test("distribution pools brands before CR5; missing prior is null; boundary is red", () => {
@@ -18,8 +22,11 @@ test("distribution pools brands before CR5; missing prior is null; boundary is r
   assert.equal(r.cr5, 0.5);
   assert.equal(r.y, 1.5);
   assert.equal(n.y, null);
-  assert.match(seaColor(0.3), /^hsl\(2 /);
-  assert.match(seaColor(0.2999), /^hsl\(214 /);
+  assert.equal(seaColor(0.3), "rgb(255 207 198)");
+  assert.equal(seaColor(0), "rgb(8 55 156)");
+  assert.equal(seaColor(1), "rgb(151 0 24)");
+  assert.notEqual(seaColor(0.05), seaColor(0.25));
+  assert.notEqual(seaColor(0.4), seaColor(0.8));
   assert.equal(seaColor(null), "#9299a5");
 });
 
@@ -111,12 +118,80 @@ test("bubble drill path, CR5 controls, missing growth and brand gray", async () 
   await tick();
   assert.match(host.textContent, /三级/);
   assert.ok(host.querySelector("svg [data-point]"));
-  host.querySelector("#bubble-min").value = "90";
-  host.querySelector("#bubble-max").value = "20";
-  host.querySelector("#bubble-apply").click();
-  assert.match(
-    host.querySelector("#bubble-status").textContent,
-    /下限不能大于上限/,
+  const select = host.querySelector("#bubble-range");
+  select.value = "low";
+  select.dispatchEvent(new dom.window.Event("change"));
+  assert.equal(host.querySelectorAll("svg [data-point]").length, 0);
+  assert.equal(host.querySelectorAll("input[type=number]").length, 0);
+  dom.window.close();
+});
+
+test("fixed CR5 ranges partition exact boundaries and exclude missing values", () => {
+  for (const [v, expected] of [
+    [0, "low"],
+    [0.1, "low"],
+    [0.10001, "mid"],
+    [0.29999, "mid"],
+    [0.3, "high"],
+    [0.49999, "high"],
+    [0.5, "top"],
+    [1, "top"],
+  ]) {
+    assert.deepEqual(
+      ["low", "mid", "high", "top"].filter((k) => inCr5Range(v, k)),
+      [expected],
+    );
+  }
+  assert.equal(inCr5Range(null, "all"), true);
+  assert.equal(inCr5Range(null, "low"), false);
+});
+
+test("large bubble views render in batches, cancel stale drawing and paginate details", async () => {
+  const dom = new JSDOM('<div id="host"></div>'),
+    host = dom.window.document.querySelector("#host");
+  let calls = 0;
+  mountDistribution(host, {
+    categories: Array.from({ length: 420 }, (_, i) => ({
+      id: String(i),
+      path: ["类目" + i, "二级", "三级"],
+    })),
+    end: 202512,
+    plats: [0],
+    esc: String,
+    money: String,
+    pct: String,
+    isCurrent: () => true,
+    aggregateGroups: async (groups) =>
+      groups.map((g, i) => ({ g: i + 1, y: 0.2 })),
+    request: async (groups) => {
+      calls++;
+      return groups.map((g, i) => ({ key: i, cr5: 0.2 }));
+    },
+  });
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+  await tick();
+  assert.equal(host.querySelectorAll("tbody").length, 0);
+  const select = host.querySelector("#bubble-range");
+  select.value = "low";
+  select.dispatchEvent(new dom.window.Event("change"));
+  await tick();
+  assert.equal(
+    host.querySelectorAll("circle").length,
+    0,
+    "stale batch cannot reinsert filtered circles",
   );
+  const all = host.querySelector("#bubble-range");
+  all.value = "all";
+  all.dispatchEvent(new dom.window.Event("change"));
+  for (let i = 0; i < 20 && host.dataset.rendering !== "false"; i++)
+    await tick();
+  assert.equal(host.querySelectorAll("circle").length, 420);
+  assert.equal(calls, 1, "filter uses cached data");
+  host.querySelector("details").open = true;
+  await tick();
+  await tick();
+  assert.equal(host.querySelectorAll("tbody tr").length, 50);
+  host.querySelector('[data-detail-page="1"]').click();
+  assert.equal(host.querySelectorAll("tbody tr").length, 50);
   dom.window.close();
 });

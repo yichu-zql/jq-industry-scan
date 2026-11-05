@@ -51,6 +51,8 @@ try {
     if($LASTEXITCODE -ne 0){throw "Brand detail build failed"}
     & $python scripts/package_data.py
     if($LASTEXITCODE -ne 0){throw 'Candidate validation failed'}
+    & $python scripts/build_distribution.py
+    if($LASTEXITCODE -ne 0){throw 'Distribution summary build failed'}
     & npm.cmd run check
     if($LASTEXITCODE -ne 0){throw 'Application checks failed'}
     & node scripts/validate-release.mjs
