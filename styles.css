@@ -1208,3 +1208,7 @@ body:has(main[aria-busy="true"]) .range::after {
     font-size: 12px;
   }
 }
+button.primary:hover {
+  background: #79214d;
+  color: #fff;
+}

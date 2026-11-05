@@ -1,5 +1,5 @@
-import { selectedPeriod, setYearRange } from "./lib/time-range.js?v=2.3.1";
-import { mountDistribution } from "./lib/bubble-view.js?v=2.3.1";
+import { selectedPeriod, setYearRange } from "./lib/time-range.js?v=2.3.2";
+import { mountDistribution } from "./lib/bubble-view.js?v=2.3.2";
 import {
   spark,
   segments,
@@ -10,7 +10,7 @@ import {
   installViewportTableHeaders,
   COLORS,
   brandColor,
-} from "./lib/presentation.js?v=2.3.1";
+} from "./lib/presentation.js?v=2.3.2";
 const VERSION = document.querySelector('meta[name="app-version"]').content;
 import {
   PLATFORMS,
@@ -1374,7 +1374,7 @@ function resetLocal() {
 document.addEventListener("table-page", () => addBarsToNew());
 document.addEventListener("click", (e) => {
   if (e.target.closest("#one-page-open")) {
-    import("./lib/report-view.js?v=2.3.1")
+    import("./lib/report-view.js?v=2.3.2")
       .then(({ openBrief }) =>
         openBrief({
           manifest,
