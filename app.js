@@ -1,4 +1,4 @@
-import { mountDistribution } from "./lib/bubble-view.js?v=2.2.0";
+import { mountDistribution } from "./lib/bubble-view.js?v=2.2.1";
 import {
   spark,
   segments,
@@ -9,7 +9,7 @@ import {
   installViewportTableHeaders,
   COLORS,
   brandColor,
-} from "./lib/presentation.js?v=2.2.0";
+} from "./lib/presentation.js?v=2.2.1";
 const VERSION = document.querySelector('meta[name="app-version"]').content;
 import {
   PLATFORMS,
