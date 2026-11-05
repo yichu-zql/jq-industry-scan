@@ -1,5 +1,5 @@
-import { selectedPeriod, setYearRange } from "./lib/time-range.js?v=2.2.2";
-import { mountDistribution } from "./lib/bubble-view.js?v=2.2.2";
+import { selectedPeriod, setYearRange } from "./lib/time-range.js?v=2.2.3";
+import { mountDistribution } from "./lib/bubble-view.js?v=2.2.3";
 import {
   spark,
   segments,
@@ -10,7 +10,7 @@ import {
   installViewportTableHeaders,
   COLORS,
   brandColor,
-} from "./lib/presentation.js?v=2.2.2";
+} from "./lib/presentation.js?v=2.2.3";
 const VERSION = document.querySelector('meta[name="app-version"]').content;
 import {
   PLATFORMS,
