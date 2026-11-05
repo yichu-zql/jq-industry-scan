@@ -45,6 +45,16 @@ test("real snapshot: hierarchy, matrix, date, category and all six page paths", 
     );
   };
   await wait(() => document.querySelector("#growth-table"));
+  await wait(
+    () =>
+      document.querySelector("#distribution svg") ||
+      document.querySelector("#bubble-retry"),
+  );
+  assert.ok(
+    !document.querySelector("#bubble-retry"),
+    "real distribution data loads",
+  );
+  assert.ok(document.querySelector("#distribution svg [data-point]"));
   assert.equal(document.querySelectorAll(".matrix button").length, 24);
   assert.ok(
     document
@@ -121,6 +131,41 @@ test("real snapshot: hierarchy, matrix, date, category and all six page paths", 
       !document.querySelector("#main").textContent.includes("加载未完成"),
       view + " rendered",
     );
+    if (view === "competition") {
+      const band = document.querySelector('[data-competition-band][value="0"]');
+      band.checked = true;
+      band.dispatchEvent(new dom.window.Event("change"));
+      await wait(
+        () =>
+          document.querySelector("#main").getAttribute("aria-busy") ===
+            "false" &&
+          document.querySelector("[data-competition-band]:checked"),
+      );
+      assert.match(
+        document.querySelector("#main").textContent,
+        /所选价格带商品/,
+      );
+      const band2 = document.querySelector(
+        '[data-competition-band][value="1"]',
+      );
+      band2.checked = true;
+      band2.dispatchEvent(new dom.window.Event("change"));
+      await wait(
+        () =>
+          document.querySelector("#main").getAttribute("aria-busy") ===
+            "false" &&
+          document.querySelectorAll("[data-competition-band]:checked")
+            .length === 2,
+      );
+      assert.ok(document.querySelector("#competition-table"));
+      document.querySelector("#competition-band-clear").click();
+      await wait(
+        () =>
+          document.querySelector("#main").getAttribute("aria-busy") ===
+            "false" &&
+          !document.querySelector("[data-competition-band]:checked"),
+      );
+    }
   }
   document.querySelector('[data-view="market"]').click();
   const mode = document.querySelector("#mode");

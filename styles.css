@@ -952,3 +952,70 @@ body:has(main[aria-busy="true"]) .range::after {
 #overview-all[hidden] {
   display: none;
 }
+.bubble-chart {
+  overflow-x: auto;
+}
+.bubble-chart svg {
+  width: 100%;
+  min-width: 640px;
+  max-height: 550px;
+}
+.bubble-chart text {
+  fill: var(--text, #303746);
+  font-size: 12px;
+}
+.bubble-chart [role="button"] {
+  cursor: pointer;
+}
+.bubble-chart [role="button"]:focus circle {
+  stroke: #151f36;
+  stroke-width: 3;
+}
+.bubble-controls {
+  flex-wrap: wrap;
+}
+.bubble-controls input[type="number"] {
+  width: 72px;
+}
+.bubble-controls select {
+  max-width: 220px;
+}
+.bubble-controls [aria-pressed="true"] {
+  background: var(--accent);
+  color: white;
+}
+.bubble-breadcrumb {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+.bubble-details summary {
+  cursor: pointer;
+  padding: 12px 0;
+}
+.competition-prices {
+  border: 1px solid var(--line, #ddd);
+  padding: 14px;
+  margin: 0 0 20px;
+}
+.competition-prices label {
+  display: inline-flex;
+  gap: 4px;
+  margin: 6px 16px 6px 0;
+}
+.competition-prices .note {
+  margin-bottom: 0;
+}
+@media (max-width: 600px) {
+  .bubble-controls {
+    gap: 8px;
+  }
+  .bubble-controls select {
+    max-width: 150px;
+  }
+  .bubble-breadcrumb button {
+    padding: 5px 8px;
+  }
+}
