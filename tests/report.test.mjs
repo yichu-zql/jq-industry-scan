@@ -36,6 +36,17 @@ test("one-page opportunity uses matched evidence and relative growth, not CR5 al
   assert.equal(r.candidates.length, 1);
   assert.equal(r.candidates[0].id, "a");
   assert.equal(r.candidates[0].delta, 270);
+  const leaf = computeReport(
+    rows,
+    cats,
+    { ...filter, ids: ["a"], path: cats[0].path },
+    { ...r.total, label: "所属二级" },
+  );
+  assert.equal(
+    leaf.candidates[0].id,
+    "a",
+    "leaf compares with parent, not itself",
+  );
   assert.equal(bandOpportunity(rows, "a", filter).band, 0);
   assert.equal(
     computeReport(rows, cats, { ...filter, start: 202503 }).candidates.length,
