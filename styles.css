@@ -1212,3 +1212,199 @@ button.primary:hover {
   background: #79214d;
   color: #fff;
 }
+.trend-controls h2 {
+  margin-bottom: 8px;
+}
+.trend-controls .toolbar {
+  flex-wrap: wrap;
+}
+.trend-controls select {
+  max-width: 210px;
+}
+.trend-controls details {
+  margin: 12px 0;
+  border: 1px solid var(--line);
+  padding: 12px;
+  border-radius: 5px;
+}
+.trend-controls summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.trend-controls [role="status"] {
+  font-size: 13px;
+  color: var(--muted);
+}
+#trend-leaves {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  max-height: 280px;
+  overflow: auto;
+  margin-top: 12px;
+}
+#trend-leaves label {
+  font-size: 13px;
+}
+.trend-report {
+  color: #171717;
+  color-scheme: light;
+}
+.trend-report .panel {
+  background: white;
+  border-color: #e0e0e0;
+}
+.trend-report h2 {
+  font-size: 23px;
+}
+.trend-report h3 {
+  font-size: 18px;
+}
+.trend-report .note {
+  color: #657183;
+}
+.trend-chart {
+  margin: 22px 0 44px;
+}
+.trend-svg {
+  overflow: auto;
+}
+.trend-svg svg {
+  width: 100%;
+  min-width: 720px;
+  height: auto;
+  display: block;
+}
+.trend-downloads {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  margin: 12px 0;
+}
+.trend-report button {
+  background: #fff;
+  color: #333;
+  border-color: #ddd;
+}
+.trend-report button:hover {
+  background: #faf1f4;
+}
+.trend-table-wrap {
+  overflow: auto;
+}
+.trend-report table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: auto;
+}
+.trend-report th,
+.trend-report td {
+  text-align: center !important;
+  vertical-align: middle;
+  padding: 9px 12px;
+  border: 1px solid #c9c9c9;
+  font-size: 14px;
+  white-space: normal;
+}
+.trend-data th {
+  background: #f8f8f8;
+  color: #333;
+}
+.trend-data i {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 7px;
+}
+.trend-competition thead th {
+  background: #ff443b;
+  color: white;
+  border-color: #222;
+}
+.trend-competition td {
+  min-width: 86px;
+}
+.trend-competition small {
+  font-size: 11px;
+  color: #ae164a;
+}
+.trend-report .trend-total th,
+.trend-report .trend-total td {
+  background: #faf0ce;
+  color: #171717;
+  font-weight: 600;
+}
+#trend-highlights article {
+  padding: 12px 0;
+  border-bottom: 1px solid #eee;
+}
+#trend-highlights p {
+  line-height: 1.8;
+}
+.trend-report.outdated {
+  opacity: 0.5;
+}
+.filters[hidden] {
+  display: none !important;
+}
+@media (max-width: 700px) {
+  #trend-leaves {
+    grid-template-columns: 1fr;
+  }
+  .trend-downloads {
+    justify-content: flex-start;
+  }
+  .trend-report th,
+  .trend-report td {
+    padding: 8px;
+    min-width: 85px;
+  }
+  .trend-controls select {
+    max-width: 180px;
+  }
+}
+@media print {
+  @page trendPage {
+    size: A4 landscape;
+    margin: 12mm;
+  }
+  body:has(.trend-report) .global-top,
+  body:has(.trend-report) footer,
+  .trend-controls,
+  .trend-downloads {
+    display: none !important;
+  }
+  .trend-report {
+    page: trendPage;
+  }
+  .trend-report .panel {
+    border: 0;
+    box-shadow: none;
+    padding: 0;
+    margin: 0 0 12mm;
+  }
+  .trend-chart {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .trend-svg {
+    overflow: visible;
+  }
+  .trend-svg svg {
+    min-width: 0;
+    width: 100%;
+  }
+  .trend-report th,
+  .trend-report td {
+    font-size: 10px;
+    padding: 5px;
+  }
+  .trend-report {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  .trend-table-wrap {
+    overflow: visible;
+  }
+}

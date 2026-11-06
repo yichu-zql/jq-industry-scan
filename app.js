@@ -1,5 +1,5 @@
-import { selectedPeriod, setYearRange } from "./lib/time-range.js?v=2.3.2";
-import { mountDistribution } from "./lib/bubble-view.js?v=2.3.2";
+import { selectedPeriod, setYearRange } from "./lib/time-range.js?v=2.4.0";
+import { mountDistribution } from "./lib/bubble-view.js?v=2.4.0";
 import {
   spark,
   segments,
@@ -10,7 +10,7 @@ import {
   installViewportTableHeaders,
   COLORS,
   brandColor,
-} from "./lib/presentation.js?v=2.3.2";
+} from "./lib/presentation.js?v=2.4.0";
 const VERSION = document.querySelector('meta[name="app-version"]').content;
 import {
   PLATFORMS,
@@ -210,6 +210,7 @@ const views = [
   ["competition", "竞品格局"],
   ["brand", "品牌深挖"],
   ["method", "口径与数据"],
+  ["trends", "行业趋势速览"],
 ];
 let brandCategoryIndex = null;
 let manifest,
@@ -442,7 +443,7 @@ function ids() {
     : globalIds();
 }
 function normalizeScope() {
-  if (["overview", "method"].includes(S.view)) return;
+  if (["overview", "method", "trends"].includes(S.view)) return;
   const list = globalIds(),
     root = catMap.get(list[0])?.path[0] || categories[0]?.path[0];
   S.cats = list.filter((id) => catMap.get(id).path[0] === root);
@@ -677,6 +678,9 @@ function syncControls() {
     S.cats === null
       ? "全部类目 · 选择行业"
       : `${catMap.get(globalIds()[0])?.path[0] || "未选类目"} · ${globalIds().length} 个三级类目`;
+  document.querySelector(".filters").hidden = S.view === "trends";
+  $("range").hidden = S.view === "trends";
+  if (S.view === "trends") $("category-picker").hidden = true;
   $("overview-all").hidden = S.view !== "overview";
   $("overview-all").setAttribute("aria-pressed", String(S.overviewAll));
   $("overview-all").classList.toggle("active", S.overviewAll);
@@ -1298,7 +1302,9 @@ function method() {
     )}</details><details class="method" open><summary>指标和增长规则</summary><ul><li>GMV（退后）使用源表 gmv，单位为人民币元；页面按金额自动显示万/亿，CSV统一导出元。延续原看板的久谦退后口径；表结构没有独立退款字段，不通过退前减退款重新推算。</li><li>件均价＝汇总GMV（退后）÷汇总销量，不能平均商品单价。份额变化及 CR5 同比变化使用百分点 pp。</li><li>增长档：三个完整年度同比均负＝持续下滑；均正且三年 CAGR＜20%＝持续中低速增长；均正且 CAGR≥20%＝持续高速增长；其余＝持平或波动增长/回落。</li><li>三年 CAGR＝最后一年金额÷三年前金额的立方根−1。判断三个年度同比需要四个完整年度；任何必需月份、平台、基期缺失则暂无法判断。</li><li>入选增长品类：年GMV（退后）≥1亿元，并满足连续三年同比均＞0，或近三个完整年度至少一年同比严格＞50%。</li><li>年规模采用截止月向前12个月；同比再向前移12个月。单月、年累计和自定义时段影响普通分析，矩阵始终保持完整年规模；年份判断以截止月前最近完整年度为准。</li><li>行业占比＝当前类目已入库金额÷全局所选已入库金额；行业结构、类目大盘和历年行业同比采用两期都有记录的相同类目-月份-平台集合，份额变化也使用该共同集合，覆盖率单独列示；展开子类目不改变分母。多选按三级类目ID去重。父子级不重复累计。</li><li>CR5＝本期前5个已识别品牌金额÷当前范围品牌表汇总金额。上年独立选取前5品牌。其他 Other、无品牌和未识别品牌计入分母、不参与排名。品牌市占率与CR5使用品牌表同源分母（含未识别品牌）；不因跨表覆盖差异隐藏。覆盖不足时表示已入库品牌数据内份额，不能解释为全市场份额。品牌与行业差异另行披露。</li><li>价格带按原始 asp 划分，左闭右开；缺失及非正价格独立保留。价格带和品牌价格结构的份额分母来自商品表，不能直接套用行业表。</li><li>缺失与零值区分：无源记录不当作零。累计值可展示已入库金额并提示缺月；不完整范围不计算整体现有范围同比或年分档；行业可比同比只使用两期共同记录，并明确显示可比覆盖率。品牌未出现不推断为新品牌或真实零销售。</li></ul></details><details class="method" open><summary>本次校验结果</summary><p>${esc(a.summary || "详见数据检查文件")}</p><p>源表含负金额或负销量的聚合记录：${esc(JSON.stringify(a.negativeRows || {}))}。保留原始汇总，非正销量不计算件均价；这些记录的修订原因源表未说明。</p><p>行业原始键冲突：${a.industryConflicts ?? "—"}；映射歧义路径：${a.mappingAmbiguities ?? "—"}。事实表已带久谦路径，不通过映射表多对多关联放大金额。</p><p>品牌 / 行业对账通过：${a.brandMatched ?? "—"} / ${a.brandCompared ?? "—"} 个可比三级类目（最近12个月，全平台）。跨表差异保留作覆盖审核；品牌份额与CR5按同源品牌数据计算。</p><p>商品 / 行业对账通过：${a.priceMatched ?? "—"} / ${a.priceCompared ?? "—"}。店铺表用于汇总核验，不以店铺名推断品牌，不展示商品系列。</p></details><details class="method" open><summary>更新与发布</summary><p id="schedule-status">${esc(manifest.updateStatus || "手动更新脚本已提供，定时任务尚未启用。")}</p><ol><li>只读获取五张久谦源表；核对入库时间和月份覆盖。</li><li>形成隔离候选数据，检查精确键、类目路径、月份连续性、负值和跨表口径。</li><li>无实质变化不产生数据版本；校验失败保留线上上一成功版本。</li><li>通过检查后提交源码和聚合数据，推送 GitHub Pages，再检查正式页面与版本。</li></ol><p>所有源表缺少可用索引，当前全量聚合成本较高。首次版本采用全量快照；不把未实现的最近三个月增量更新写成已启用。</p></details><p>数据可公开访问；网站不保存数据库凭据，不由浏览器直接连接数据库。筛选状态仅存当前浏览器。</p></div>`,
   );
 }
+let trendsModule = null;
 async function render() {
+  trendsModule?.cancelTrends();
   ++competitionRevision;
   clearTimeout(competitionTimer);
   competitionWorker?.postMessage({ type: "cancel" });
@@ -1324,7 +1330,7 @@ async function render() {
   syncControls();
   persist();
   $("main").setAttribute("aria-busy", "true");
-  if (!ids().length || !S.plats.length) {
+  if (S.view !== "trends" && (!ids().length || !S.plats.length)) {
     $("main").innerHTML =
       '<section class="panel"><p class="empty">请至少选择一个类目和一个平台。</p></section>';
     $("main").setAttribute("aria-busy", "false");
@@ -1336,7 +1342,18 @@ async function render() {
     else if (S.view === "price") await priceReference(t);
     else if (S.view === "competition") await competitionReference(t);
     else if (S.view === "brand") await brandReference(t);
-    else method();
+    else if (S.view === "trends") {
+      trendsModule = await import("./lib/trend-view.js?v=2.4.0");
+      if (t !== token) return;
+      trendsModule.mountTrends({
+        element: $("main"),
+        manifest,
+        industry,
+        ids: globalIds(),
+        plats: [...S.plats],
+        isCurrent: () => t === token && S.view === "trends",
+      });
+    } else method();
     if (
       S.view === "competition" &&
       renderCompetitionRevision !== competitionRevision
@@ -1374,7 +1391,7 @@ function resetLocal() {
 document.addEventListener("table-page", () => addBarsToNew());
 document.addEventListener("click", (e) => {
   if (e.target.closest("#one-page-open")) {
-    import("./lib/report-view.js?v=2.3.2")
+    import("./lib/report-view.js?v=2.4.0")
       .then(({ openBrief }) =>
         openBrief({
           manifest,

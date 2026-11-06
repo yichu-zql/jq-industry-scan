@@ -23,7 +23,7 @@ test("real snapshot: hierarchy, matrix, date, category and all six page paths", 
     delete globalThis.Worker;
     // Export toast uses a timer; let it settle before removing its DOM.
     while (!document.querySelector("#toast").hidden)
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await new Promise((resolve) => setTimeout(resolve, 50));
     dom.window.close();
   });
   globalThis.Worker = class extends BrowserWorker {
@@ -191,7 +191,14 @@ test("real snapshot: hierarchy, matrix, date, category and all six page paths", 
   await wait(() =>
     document.querySelector("#category-button").textContent.includes("1 个"),
   );
-  for (const view of ["market", "price", "competition", "brand", "method"]) {
+  for (const view of [
+    "market",
+    "price",
+    "competition",
+    "brand",
+    "method",
+    "trends",
+  ]) {
     document.querySelector(`[data-view="${view}"]`).click();
     await wait(
       () =>
@@ -202,6 +209,10 @@ test("real snapshot: hierarchy, matrix, date, category and all six page paths", 
       !document.querySelector("#main").textContent.includes("加载未完成"),
       view + " rendered",
     );
+    if (view === "trends") {
+      assert.ok(document.querySelector("#trend-generate"));
+      assert.equal(document.querySelector(".filters").hidden, true);
+    }
     if (view === "competition") {
       const band = document.querySelector('[data-competition-band][value="0"]');
       band.checked = true;
