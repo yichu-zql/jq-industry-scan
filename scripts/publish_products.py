@@ -36,7 +36,11 @@ def main():
  state=json.loads(statepath.read_text()) if statepath.exists() else {}
  if state.get('key')!=key:state={'key':key,'prefix':'codex/sku-stage-'+str(int(time.time())),'commits':[]}
  parents=[];objects={};futures=[]
- with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+ remote={}
+ if args.publish:
+  for line in git('ls-remote','--heads','origin',state['prefix']+'-*').splitlines():
+   oid,ref=line.split();remote[ref]=oid
+ with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
   for n,batch in enumerate(batches):
    branch=state['prefix']+'-'+str(n+1)
    if n<len(state['commits']):sha=state['commits'][n]
@@ -46,8 +50,8 @@ def main():
    for line in git('ls-tree','-r',sha).splitlines():
     entry,path=line.split('\t',1);objects[path]=entry.split()[2]
    print('Prepared batch',n+1,len(batches),flush=True)
-   if args.publish:futures.append(pool.submit(push,branch))
-  for n,f in enumerate(concurrent.futures.as_completed(futures),1):f.result();print('Uploaded batch',n,len(batches),flush=True)
+   if args.publish and remote.get('refs/heads/'+branch)!=sha:futures.append(pool.submit(push,branch))
+  for n,f in enumerate(concurrent.futures.as_completed(futures),len(batches)-len(futures)+1):f.result();print('Uploaded batch',n,len(batches),flush=True)
  branch='codex/product-assets';old=revision('refs/heads/'+branch)
  final=commit(branch,'Publish verified compact SKU snapshot',([old] if old else [])+parents,objects=objects)
  if args.publish:push(branch)
