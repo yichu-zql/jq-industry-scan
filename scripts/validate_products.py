@@ -2,6 +2,9 @@
 import pathlib,json,gzip,collections,math,sys,hashlib
 root=pathlib.Path(__file__).resolve().parents[1];folder=root/'.cache/product-snapshot';index=json.loads((folder/'index.json').read_text(encoding='utf-8'));manifest=json.loads((root/'data/manifest.json').read_text(encoding='utf-8'))
 from product_leaders import category_points,write_leader,merge
+selectable={c['id'] for c in json.loads(gzip.decompress((root/'data'/manifest['industry']).read_bytes()))['categories']}
+assert selectable<=set(index['files']), 'Selectable categories missing SKU data'
+assert index['rows']==sum(v['rows'] for parts in index['files'].values() for v in parts), 'SKU row count mismatch'
 leaders={}
 plats={'tmall':0,'jd':1,'douyin':2};total=0;verified=0
 for cid,parts in index['files'].items():

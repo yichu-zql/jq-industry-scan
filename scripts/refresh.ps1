@@ -59,6 +59,8 @@ try {
     if($LASTEXITCODE -ne 0){throw 'Report evidence build failed'}
     $inputJson | & $python scripts/extract_products.py
     if($LASTEXITCODE -ne 0){throw 'SKU extraction failed'}
+    $signatureProducts=$inputJson | & $python scripts/signature.py
+    if($LASTEXITCODE -ne 0 -or $signature.Trim() -ne $signatureProducts.Trim()){throw 'Source changed during SKU extraction; publication stopped'}
     & $python scripts/validate_products.py
     if($LASTEXITCODE -ne 0){throw 'SKU source reconciliation failed'}
     if($Publish){ & $python scripts/publish_products.py --publish } else { & $python scripts/publish_products.py }

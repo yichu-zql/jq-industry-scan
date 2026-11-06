@@ -1,5 +1,5 @@
 """Pinned SKU assets in a separate branch; bounded pushes keep Pages below its size limit."""
-import pathlib,json,subprocess,time,argparse
+import pathlib,json,subprocess,time,argparse,gzip
 root=pathlib.Path(__file__).resolve().parents[1];folder=root/'.cache/product-snapshot';parser=argparse.ArgumentParser();parser.add_argument('--publish',action='store_true');args=parser.parse_args()
 def git(*x,**kw):return subprocess.check_output(['git','-c','safe.directory='+root.as_posix(),*x],cwd=root,**kw).decode().strip()
 index=json.loads((folder/'index.json').read_text(encoding='utf-8'));manifest=json.loads((root/'data/manifest.json').read_text(encoding='utf-8'))
@@ -30,7 +30,7 @@ for bn,batch in enumerate(batches):
  if args.publish:subprocess.run(['git','-c','safe.directory='+root.as_posix(),'push','origin',branch],cwd=root,check=True)
 index['base']='https://raw.githubusercontent.com/yichu-zql/jq-industry-scan/'+parent+'/'
 index['sourceVersion']=manifest['version'];index['assetCommit']=parent
-manifest['products']={'catalog':'products.json','assetCommit':parent,'sourceVersion':manifest['version'],'last':index['last']}
+manifest['products']={'catalog':'products.json.gz','assetCommit':parent,'sourceVersion':manifest['version'],'last':index['last']}
 (root/'data/manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,separators=(',',':')),encoding='utf-8')
-(root/'data/products.json').write_text(json.dumps(index,ensure_ascii=False,separators=(',',':')),encoding='utf-8')
+(root/'data/products.json.gz').write_bytes(gzip.compress(json.dumps(index,ensure_ascii=False,separators=(',',':')).encode(),mtime=0))
 print('SKU catalog ready',parent,len(files),index['bytes'],flush=True)

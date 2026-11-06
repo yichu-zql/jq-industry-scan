@@ -119,6 +119,16 @@ test("trend UI local filters, stale export guard, editable downloads and remount
   const end = document.getElementById("trend-end");
   end.value = "2025";
   end.dispatchEvent(new dom.window.Event("change"));
+  assert.equal(start.value, "2023");
+  end.value = "2026";
+  end.dispatchEvent(new dom.window.Event("change"));
+  assert.equal(
+    start.value,
+    "2024",
+    "default remains three periods after year switching",
+  );
+  end.value = "2025";
+  end.dispatchEvent(new dom.window.Event("change"));
   assert.equal(document.querySelector("[data-trend-download]").disabled, true);
   document.getElementById("trend-generate").click();
   await wait(

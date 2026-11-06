@@ -70,7 +70,11 @@ for (const p of ["index.html", "app.js", "styles.css", "lib/metrics.js"]) {
 console.log("Release checks passed:", m.version);
 
 if (m.products) {
-  const p = JSON.parse(fs.readFileSync("data/" + m.products.catalog, "utf8"));
+  const p = JSON.parse(
+    zlib
+      .gunzipSync(fs.readFileSync("data/" + m.products.catalog))
+      .toString("utf8"),
+  );
   assert.equal(p.sourceVersion, m.version);
   assert.equal(p.last, m.last);
   assert.match(

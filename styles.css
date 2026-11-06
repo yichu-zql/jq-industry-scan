@@ -1437,3 +1437,4 @@ button.primary:hover {
 [data-trend-theme="dashboard"] .trend-downloads{justify-content:flex-start;margin:6px 0}
 @media(max-width:1100px){[data-trend-theme="dashboard"] .trend-report .market-layout{grid-template-columns:1fr}.trend-report .product-name{max-width:180px}}
 @media print{[data-trend-theme="dashboard"] .trend-report .market-layout{display:block}.trend-bar>i{print-color-adjust:exact}}
+.trend-report .platform-legend{background:#fff;border-radius:2px;padding:2px 4px;margin-top:3px;text-align:center}
