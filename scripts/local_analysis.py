@@ -5,6 +5,8 @@ import pymysql
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 PREFIX='jq_custom_'
 LOCK=threading.Lock()
+SHARD_LOCKS={}
+IMPORT_SLOTS=threading.Semaphore(4)
 def norm(s): return ''.join(unicodedata.normalize('NFKC',str(s or '')).lower().split())
 def connection(cfg):
     cfg={**cfg,'database':'ulike_tmp'}
@@ -48,24 +50,26 @@ def validated(f,index):
 def query(cfg,index,f):
     ids,plats,lo,hi,inc,exc,mode=validated(f,index)
     # Bound parallel imports; each shard commits atomically, completed shards are reused.
-    with LOCK:
-        tasks=[]
-        unavailable=[]
-        for cid in ids:
-            parts=[p for p in index['files'][cid] if p['last']>=lo and p['first']<=hi]
-            if not parts:unavailable.append(cid)
-            tasks.extend((cid,p) for p in parts)
-        if not tasks:raise ValueError('所选时段全部类目均无商品数据，请调整类目或年份')
-        eligible=[(cid,p['first']//100) for cid,p in tasks]
-        with connection(cfg) as db:
-            with db.cursor() as q:
-                q.execute('SELECT category,yr,digest FROM jq_custom_shards_v1 WHERE category IN ('+','.join(['%s']*len(ids))+')',ids)
-                ready={(cid,yr):digest for cid,yr,digest in q.fetchall()}
-        tasks=[(cid,p) for cid,p in tasks if ready.get((cid,p['first']//100))!=p['sha256']]
-        def prepare(task):
-            with connection(cfg) as db:ensure(db,*task)
-        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
-            list(pool.map(prepare,tasks))
+    tasks=[]
+    unavailable=[]
+    for cid in ids:
+        parts=[p for p in index['files'][cid] if p['last']>=lo and p['first']<=hi]
+        if not parts:unavailable.append(cid)
+        tasks.extend((cid,p) for p in parts)
+    if not tasks:raise ValueError('所选时段全部类目均无商品数据，请调整类目或年份')
+    eligible=[(cid,p['first']//100) for cid,p in tasks]
+    with connection(cfg) as db:
+        with db.cursor() as q:
+            q.execute('SELECT category,yr,digest FROM jq_custom_shards_v1 WHERE category IN ('+','.join(['%s']*len(ids))+')',ids)
+            ready={(cid,yr):digest for cid,yr,digest in q.fetchall()}
+    tasks=[(cid,p) for cid,p in tasks if ready.get((cid,p['first']//100))!=p['sha256']]
+    def prepare(task):
+        cid,p=task
+        with LOCK:
+            lock=SHARD_LOCKS.setdefault((cid,p['first']//100),threading.Lock())
+        with lock, IMPORT_SLOTS, connection(cfg) as db:ensure(db,*task)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+        list(pool.map(prepare,tasks))
     with connection(cfg) as c:
         base='category IN ('+','.join(['%s']*len(ids))+') AND month BETWEEN %s AND %s AND platform IN ('+','.join(['%s']*len(plats))+')'
         args=ids+[lo,hi]+plats
@@ -112,6 +116,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 def main():
     cfg=json.loads(sys.stdin.readline());initialize(cfg)
     index=json.loads((ROOT/'.cache/product-public/index.json').read_text())
+    manifest=json.loads((ROOT/'data/manifest.json').read_text(encoding='utf-8'))
+    categories=json.loads(gzip.decompress((ROOT/'data'/manifest['industry']).read_bytes()))['categories']
+    excluded={'商用设备','家居建材','家装建材','影音乐器','生活电器','大家电'}
+    allowed={c['id'] for c in categories if c['path'][0] not in excluded}
+    index['files']={k:v for k,v in index['files'].items() if k in allowed}
     server=http.server.ThreadingHTTPServer(('127.0.0.1',8765),Handler);server.cfg=cfg;server.index=index
     print('Local SQL dashboard: http://127.0.0.1:8765/#trends',flush=True)
     server.serve_forever()

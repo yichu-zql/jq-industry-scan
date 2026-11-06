@@ -6,7 +6,7 @@ import {parseTagRule} from '../lib/trend-rules.js';
 import {createProductAggregation} from '../lib/trend-products.js';
 const manifest=JSON.parse(fs.readFileSync('data/manifest.json'));
 const industry=JSON.parse(zlib.gunzipSync(fs.readFileSync('data/'+manifest.industry)));
-const ids=industry.categories.filter(c=>c.path[1]==='美容仪器'||['美容修剪','医学美容','美容店设备'].includes(c.path[2])).map(c=>c.id);
+const ids=industry.categories.filter(c=>c.path[1]==='美容仪器'||['美容修剪','医学美容'].includes(c.path[2])).map(c=>c.id);
 const url=new URL('../lib/trend-worker.js',import.meta.url);
 const worker=new Worker(`const {parentPort}=require('node:worker_threads');global.self=global;global.location={hostname:'127.0.0.1'};global.postMessage=m=>parentPort.postMessage(m);const nativeFetch=fetch;global.fetch=(u,o)=>nativeFetch(new URL(u,'http://127.0.0.1:8765'),o);import(${JSON.stringify(url.href)}).then(()=>parentPort.on('message',data=>self.onmessage({data})));`,{eval:true});
 worker.postMessage({type:'init',industry,manifest});
@@ -22,7 +22,7 @@ try {
   const f={ids:scope,plats:[0,1,2],startYear:Math.max(2023,year-2),endYear:year,cutoff:9,rule:parseTagRule(text)};
   const t=Date.now(),r=await run(f),expected=direct(f);
   assert.ok(Math.abs(r.market.kpi.g-expected.kpi.g)<.01);assert.ok(Math.abs(r.brands.total-r.market.kpi.g)<.01);assert.ok(Math.abs(r.prices.total.g-r.market.kpi.g)<.01);assert.equal(r.prices.total.y,r.market.kpi.y);assert.equal(r.market.productInfo.products,expected.productInfo.products);
-  if(year===2026 && text==='包含光子嫩肤' && scope.length===18) fs.writeFileSync('.cache/local-verified-model.json',JSON.stringify({filter:f,result:r}));
+  if(year===2026 && text==='包含光子嫩肤' && scope.length===17) fs.writeFileSync('.cache/local-verified-model.json',JSON.stringify({filter:f,result:r}));
   console.log(JSON.stringify({year,rule:text,categories:scope.length,gmv:r.market.kpi.g,products:r.market.productInfo.products,ms:Date.now()-t}));
  }
 }finally{await worker.terminate();}
