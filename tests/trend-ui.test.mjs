@@ -56,6 +56,7 @@ test("trend UI local filters, stale export guard, editable downloads and remount
   mountTrends(ctx);
   assert.equal(document.querySelectorAll("[data-applied-remove]").length, 1);
   document.getElementById("selection-edit").click();
+  assert.ok(document.querySelectorAll("#selection-options input").length<=60);
   document.getElementById("selection-clear").click();
   document.getElementById("selection-cancel").click();
   assert.equal(
@@ -92,6 +93,7 @@ test("trend UI local filters, stale export guard, editable downloads and remount
     .querySelector('[data-trend-download="prices"][data-format="csv"]')
     .click();
   assert.match(await downloads.at(-1).text(), /带内品牌份额/);
+  assert.match(await downloads.at(-1).text(), /品牌GMV/);
   assert.ok(
     !document.querySelector("#trend-prices").textContent.includes("NaN"),
   );
@@ -127,5 +129,11 @@ test("trend UI local filters, stale export guard, editable downloads and remount
     before + 1,
     "remount does not duplicate export handlers",
   );
+  const tag=document.getElementById('tag-description');
+  tag.value='同时包含吹风机、红光，但不包含配件';tag.dispatchEvent(new dom.window.Event('input'));
+  document.getElementById('trend-generate').click();assert.match(document.getElementById('trend-status').textContent,/先核对/);
+  document.getElementById('tag-confirm').click();document.getElementById('trend-generate').click();assert.match(document.getElementById('trend-status').textContent,/无商品明细/);
+  assert.equal(document.querySelector('[data-trend-download]').disabled,true);
+  document.getElementById('tag-clear').click();
   cancelTrends();
 });
