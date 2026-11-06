@@ -63,6 +63,8 @@ try {
     if($LASTEXITCODE -ne 0 -or $signature.Trim() -ne $signatureProducts.Trim()){throw 'Source changed during SKU extraction; publication stopped'}
     & $python scripts/validate_products.py
     if($LASTEXITCODE -ne 0){throw 'SKU source reconciliation failed'}
+    & $python scripts/compact_products.py
+    if($LASTEXITCODE -ne 0){throw 'SKU compact encoding failed'}
     if($Publish){ & $python scripts/publish_products.py --publish } else { & $python scripts/publish_products.py }
     if($LASTEXITCODE -ne 0){throw 'SKU publication preparation failed'}
     & npm.cmd run check

@@ -85,7 +85,7 @@ if (m.products) {
   assert.ok(Object.keys(p.files).length > 0);
   for (const list of Object.values(p.files))
     for (const v of list) {
-      assert.match(v.path, /^[a-f0-9]+\/[0-9]{6}\.json\.gz$/);
+      assert.match(v.path, /^[a-f0-9]+\/[0-9]{4,6}\.json\.gz$/);
       assert.match(v.sha256, /^[a-f0-9]{64}$/);
     }
 }
