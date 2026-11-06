@@ -68,24 +68,3 @@ for (const p of ["index.html", "app.js", "styles.css", "lib/metrics.js"]) {
   );
 }
 console.log("Release checks passed:", m.version);
-
-if (m.products) {
-  const p = JSON.parse(
-    zlib
-      .gunzipSync(fs.readFileSync("data/" + m.products.catalog))
-      .toString("utf8"),
-  );
-  assert.equal(p.sourceVersion, m.version);
-  assert.equal(p.last, m.last);
-  assert.match(
-    p.base,
-    /^https:\/\/raw\.githubusercontent\.com\/yichu-zql\/jq-industry-scan\/[0-9a-f]{40}\/$/,
-  );
-  assert.equal(p.assetCommit, m.products.assetCommit);
-  assert.ok(Object.keys(p.files).length > 0);
-  for (const list of Object.values(p.files))
-    for (const v of list) {
-      assert.match(v.path, /^[a-f0-9]+\/[0-9]{4,6}\.json\.gz$/);
-      assert.match(v.sha256, /^[a-f0-9]{64}$/);
-    }
-}

@@ -49,10 +49,7 @@ test("custom industry pricing uses exact leaf scope, paired growth and band bran
   );
 });
 test("real custom worker prices and cached stages stay in selected cross-root scope", async (t) => {
-  const manifest = {
-    ...JSON.parse(fs.readFileSync("data/manifest.json")),
-    products: null,
-  };
+  const manifest = JSON.parse(fs.readFileSync("data/manifest.json"));
   const industry = JSON.parse(
     zlib.gunzipSync(fs.readFileSync("data/" + manifest.industry)),
   );

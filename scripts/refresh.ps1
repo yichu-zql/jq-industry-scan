@@ -57,16 +57,6 @@ try {
     if($LASTEXITCODE -ne 0){throw 'Competition cube build failed'}
     & $python scripts/build_report.py
     if($LASTEXITCODE -ne 0){throw 'Report evidence build failed'}
-    $inputJson | & $python scripts/extract_products.py
-    if($LASTEXITCODE -ne 0){throw 'SKU extraction failed'}
-    $signatureProducts=$inputJson | & $python scripts/signature.py
-    if($LASTEXITCODE -ne 0 -or $signature.Trim() -ne $signatureProducts.Trim()){throw 'Source changed during SKU extraction; publication stopped'}
-    & $python scripts/validate_products.py
-    if($LASTEXITCODE -ne 0){throw 'SKU source reconciliation failed'}
-    & $python scripts/compact_products.py
-    if($LASTEXITCODE -ne 0){throw 'SKU compact encoding failed'}
-    if($Publish){ & $python scripts/publish_products.py --publish } else { & $python scripts/publish_products.py }
-    if($LASTEXITCODE -ne 0){throw 'SKU publication preparation failed'}
     & npm.cmd run check
     if($LASTEXITCODE -ne 0){throw 'Application checks failed'}
     & node scripts/validate-release.mjs
@@ -80,8 +70,8 @@ try {
         if($diffCode -eq 1){
             & $python scripts/bump_version.py patch
             if($LASTEXITCODE -ne 0){throw 'Version bump failed'}
-            & git add -- lib/version.js lib/bubble-view.js lib/competition-worker.js lib/report-view.js lib/report-worker.js lib/trend-view.js lib/trend-worker.js lib/trend-chart.js lib/trend-export.js lib/trend-selection.js lib/trend-prices.js lib/trend-rules.js lib/trend-products.js lib/trend-display.js index.html app.js
-            & git commit -m "Refresh Jiuqian validated data $stamp" -- data lib/version.js lib/bubble-view.js lib/competition-worker.js lib/report-view.js lib/report-worker.js lib/trend-view.js lib/trend-worker.js lib/trend-chart.js lib/trend-export.js lib/trend-selection.js lib/trend-prices.js lib/trend-rules.js lib/trend-products.js lib/trend-display.js index.html app.js
+            & git add -- lib/version.js lib/bubble-view.js lib/competition-worker.js lib/report-view.js lib/report-worker.js lib/trend-view.js lib/trend-worker.js lib/trend-chart.js lib/trend-export.js lib/trend-selection.js lib/trend-prices.js lib/trend-rules.js index.html app.js
+            & git commit -m "Refresh Jiuqian validated data $stamp" -- data lib/version.js lib/bubble-view.js lib/competition-worker.js lib/report-view.js lib/report-worker.js lib/trend-view.js lib/trend-worker.js lib/trend-chart.js lib/trend-export.js lib/trend-selection.js lib/trend-prices.js lib/trend-rules.js index.html app.js
             if($LASTEXITCODE -ne 0){throw 'Commit failed'}
             & git push origin main
             if($LASTEXITCODE -ne 0){throw 'Push failed'}

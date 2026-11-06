@@ -47,7 +47,7 @@ test("trend UI local filters, stale export guard, editable downloads and remount
   const { mountTrends, cancelTrends } = await import("../lib/trend-view.js");
   const ctx = {
     element: document.getElementById("main"),
-    manifest: { ...manifest, products: null },
+    manifest,
     industry,
     ids: [id],
     plats: [0, 1, 2],
@@ -56,7 +56,7 @@ test("trend UI local filters, stale export guard, editable downloads and remount
   mountTrends(ctx);
   assert.equal(document.querySelectorAll("[data-applied-remove]").length, 1);
   document.getElementById("selection-edit").click();
-  assert.ok(document.querySelectorAll("#selection-options input").length <= 60);
+  assert.ok(document.querySelectorAll("#selection-options input").length<=60);
   document.getElementById("selection-clear").click();
   document.getElementById("selection-cancel").click();
   assert.equal(
@@ -101,32 +101,7 @@ test("trend UI local filters, stale export guard, editable downloads and remount
     .querySelector('[data-trend-download="competition"][data-format="xlsx"]')
     .click();
   assert.match(await downloads.at(-1).text(), /平台|天猫/);
-  const theme = document.getElementById("trend-theme");
-  theme.value = "dashboard";
-  theme.dispatchEvent(new dom.window.Event("change"));
-  assert.equal(ctx.element.dataset.trendTheme, "dashboard");
-  assert.ok(document.querySelector(".platform-mix"));
-  assert.ok(document.querySelector(".trend-bar"));
-  assert.match(document.querySelector(".platform-table").textContent, /同比/);
-  document
-    .querySelector('[data-trend-download="channels"][data-format="svg"]')
-    .click();
-  assert.match(await downloads.at(-1).text(), /#334f93/);
-  const start = document.getElementById("trend-start");
-  start.value = "2026";
-  start.dispatchEvent(new dom.window.Event("change"));
-  assert.equal(start.value, "2024");
   const end = document.getElementById("trend-end");
-  end.value = "2025";
-  end.dispatchEvent(new dom.window.Event("change"));
-  assert.equal(start.value, "2023");
-  end.value = "2026";
-  end.dispatchEvent(new dom.window.Event("change"));
-  assert.equal(
-    start.value,
-    "2024",
-    "default remains three periods after year switching",
-  );
   end.value = "2025";
   end.dispatchEvent(new dom.window.Event("change"));
   assert.equal(document.querySelector("[data-trend-download]").disabled, true);
@@ -154,17 +129,8 @@ test("trend UI local filters, stale export guard, editable downloads and remount
     before + 1,
     "remount does not duplicate export handlers",
   );
-  const tag = document.getElementById("tag-description");
-  tag.value = "同时包含吹风机、红光，但不包含配件";
-  tag.dispatchEvent(new dom.window.Event("input"));
-  document.getElementById("trend-generate").click();
-  assert.match(document.getElementById("trend-status").textContent, /先核对/);
-  document.getElementById("tag-confirm").click();
-  assert.match(
-    document.getElementById("tag-status").textContent,
-    /按商品名称筛选/,
-  );
-  assert.equal(document.querySelector("#trend-results").children.length, 0);
-  document.getElementById("tag-clear").click();
+  assert.equal(document.getElementById('tag-description'),null);
+  assert.match(document.getElementById('tag-rules').textContent,/GitHub版/);
+
   cancelTrends();
 });

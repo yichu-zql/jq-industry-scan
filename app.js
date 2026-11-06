@@ -1,5 +1,5 @@
-import { selectedPeriod, setYearRange } from "./lib/time-range.js?v=2.7.0";
-import { mountDistribution } from "./lib/bubble-view.js?v=2.7.0";
+import { selectedPeriod, setYearRange } from "./lib/time-range.js?v=2.6.1";
+import { mountDistribution } from "./lib/bubble-view.js?v=2.6.1";
 import {
   spark,
   segments,
@@ -10,7 +10,7 @@ import {
   installViewportTableHeaders,
   COLORS,
   brandColor,
-} from "./lib/presentation.js?v=2.7.0";
+} from "./lib/presentation.js?v=2.6.1";
 const VERSION = document.querySelector('meta[name="app-version"]').content;
 import {
   PLATFORMS,
@@ -1343,7 +1343,7 @@ async function render() {
     else if (S.view === "competition") await competitionReference(t);
     else if (S.view === "brand") await brandReference(t);
     else if (S.view === "trends") {
-      trendsModule = await import("./lib/trend-view.js?v=2.7.0");
+      trendsModule = await import("./lib/trend-view.js?v=2.6.1");
       if (t !== token) return;
       trendsModule.mountTrends({
         element: $("main"),
@@ -1391,7 +1391,7 @@ function resetLocal() {
 document.addEventListener("table-page", () => addBarsToNew());
 document.addEventListener("click", (e) => {
   if (e.target.closest("#one-page-open")) {
-    import("./lib/report-view.js?v=2.7.0")
+    import("./lib/report-view.js?v=2.6.1")
       .then(({ openBrief }) =>
         openBrief({
           manifest,
@@ -1812,7 +1812,7 @@ async function boot() {
       `看板 V${VERSION} · 数据 ${manifest.version} · ${categories.length}个三级类目 · 最近成功数据生成 ${manifest.built}（北京时间）`;
     $("controls").removeAttribute("inert");
     document.title = `久谦·行业品类品牌趋势看板V${VERSION}`;
-    document.querySelector("h1 span").textContent = `V${VERSION}`;
+    document.querySelector("h1 span").textContent = `GitHub版 V${VERSION}`;
     if (window.requestAnimationFrame && globalThis.MutationObserver)
       installViewportTableHeaders();
     await render();

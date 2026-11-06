@@ -135,13 +135,14 @@ test("published competition cubes match original records for multi-band, platfor
 });
 test("rapid worker requests share downloads; only newest selection returns and repeat uses cache", async () => {
   const url = new URL("../lib/competition-worker.js", import.meta.url).href;
-  const wrapper = `const {parentPort}=require('node:worker_threads');globalThis.self=globalThis;globalThis.postMessage=m=>parentPort.postMessage(m);globalThis.fetch=async url=>{parentPort.postMessage({fetch:url});await new Promise(r=>setTimeout(r,40));return new Response(JSON.stringify([[202501,0,'brand',url==='a'?0:1,url==='a'?10:20,1]]));};import(${JSON.stringify(url)}).then(()=>{parentPort.on('message',data=>self.onmessage({data}));parentPort.postMessage({ready:true});});`;
+  const wrapper = `const {parentPort}=require('node:worker_threads');const gates=[];globalThis.self=globalThis;globalThis.postMessage=m=>parentPort.postMessage(m);globalThis.fetch=async url=>{parentPort.postMessage({fetch:url});await new Promise(r=>gates.push(r));return new Response(JSON.stringify([[202501,0,'brand',url==='a'?0:1,url==='a'?10:20,1]]));};import(${JSON.stringify(url)}).then(()=>{parentPort.on('message',data=>data.release?gates.splice(0).forEach(r=>r()):self.onmessage({data}));parentPort.postMessage({ready:true});});`;
   const worker = new Worker(wrapper, { eval: true }),
     messages = [],
     waiters = new Map();
   worker.on("message", (m) => {
     messages.push(m);
     if (m.ready) waiters.get("ready")?.(m);
+    if (m.fetch) waiters.get("fetch")?.(m);
     if (m.result || m.error) waiters.get(m.id)?.(m);
   });
   try {
@@ -153,10 +154,12 @@ test("rapid worker requests share downloads; only newest selection returns and r
       end: 202512,
       plats: [0],
     };
+    const fetching = new Promise(resolve => waiters.set("fetch",resolve));
     worker.postMessage({ ...request, id: 1, bands: [0] });
-    await new Promise((r) => setTimeout(r, 10));
+    await fetching;
     const second = new Promise((resolve) => waiters.set(2, resolve));
     worker.postMessage({ ...request, id: 2, bands: [0, 1] });
+    worker.postMessage({release:true});
     assert.equal((await second).result.cur[0].g, 30);
     const third = new Promise((resolve) => waiters.set(3, resolve));
     worker.postMessage({ ...request, id: 3, bands: [0, 1] });
