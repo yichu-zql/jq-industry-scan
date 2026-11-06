@@ -14,7 +14,7 @@ test('rule edits remain drafts until confirmation and can be cleared',()=>{
  const dom=new JSDOM('<div id="rules"></div>');const host=dom.window.document.getElementById('rules'),state={};let changes=0;
  mountRules(host,state,()=>changes++);const input=host.querySelector('textarea');
  input.value='同时包含吹风机、红光，但不包含配件';input.dispatchEvent(new dom.window.Event('input'));
- assert.equal(state.confirmedRule,undefined);host.querySelector('#tag-confirm').click();assert.equal(state.confirmedRule.mode,'all');assert.match(host.textContent,/尚未应用于分析/);
+ assert.equal(state.confirmedRule,undefined);host.querySelector('#tag-confirm').click();assert.equal(state.confirmedRule.mode,'all');assert.match(host.textContent,/按商品名称筛选/);
  input.value='包含红光';input.dispatchEvent(new dom.window.Event('input'));assert.notEqual(state.ruleDraft,state.confirmedRule.text);
  host.querySelector('#tag-clear').click();assert.equal(state.confirmedRule,null);assert.equal(state.ruleDraft,'');assert.equal(changes,4);dom.window.close();
 });

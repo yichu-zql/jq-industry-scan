@@ -4,3 +4,11 @@ node_modules/
 __pycache__/
 *.log
 *.tmp
+
+# Local secrets and connection exports
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+connection.xml

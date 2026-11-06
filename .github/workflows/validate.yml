@@ -16,4 +16,5 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+      - run: python -m unittest discover -s tests -p "*_test.py"
       - run: node scripts/validate-release.mjs
