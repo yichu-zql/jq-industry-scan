@@ -54,11 +54,28 @@ test("trend UI local filters, stale export guard, editable downloads and remount
     isCurrent: () => true,
   };
   mountTrends(ctx);
+  assert.equal(document.querySelectorAll("[data-applied-remove]").length, 1);
+  document.getElementById("selection-edit").click();
+  document.getElementById("selection-clear").click();
+  document.getElementById("selection-cancel").click();
+  assert.equal(
+    document.querySelectorAll("[data-applied-remove]").length,
+    1,
+    "cancel keeps applied scope",
+  );
+  const industryName = document.getElementById("industry-name");
+  industryName.value = "吹风机研究";
+  industryName.dispatchEvent(new dom.window.Event("input"));
+  document.getElementById("scheme-save").click();
+  assert.match(
+    window.localStorage.getItem("jq-custom-industries-v1"),
+    /吹风机研究/,
+  );
   document.getElementById("trend-generate").click();
   await wait(
     () => document.getElementById("trend-status").dataset.ready === "true",
   );
-  assert.equal(document.querySelectorAll(".trend-svg svg").length, 2);
+  assert.equal(document.querySelectorAll(".trend-svg svg").length, 1);
   assert.equal(
     document.querySelectorAll(".trend-competition tbody tr").length,
     6,
@@ -67,6 +84,21 @@ test("trend UI local filters, stale export guard, editable downloads and remount
     .querySelector('[data-trend-download="channels"][data-format="xlsx"]')
     .click();
   assert.match(await downloads.at(-1).text(), /<c:lineChart>/);
+  assert.ok(document.querySelector("#trend-prices tbody tr"));
+  const mode = document.getElementById("price-mode");
+  mode.value = "share";
+  mode.dispatchEvent(new dom.window.Event("change"));
+  document
+    .querySelector('[data-trend-download="prices"][data-format="csv"]')
+    .click();
+  assert.match(await downloads.at(-1).text(), /带内品牌份额/);
+  assert.ok(
+    !document.querySelector("#trend-prices").textContent.includes("NaN"),
+  );
+  document
+    .querySelector('[data-trend-download="competition"][data-format="xlsx"]')
+    .click();
+  assert.match(await downloads.at(-1).text(), /平台|天猫/);
   const end = document.getElementById("trend-end");
   end.value = "2025";
   end.dispatchEvent(new dom.window.Event("change"));

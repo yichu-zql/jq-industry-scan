@@ -70,8 +70,8 @@ try {
         if($diffCode -eq 1){
             & $python scripts/bump_version.py patch
             if($LASTEXITCODE -ne 0){throw 'Version bump failed'}
-            & git add -- lib/version.js lib/bubble-view.js lib/competition-worker.js lib/report-view.js lib/report-worker.js lib/trend-view.js lib/trend-worker.js lib/trend-chart.js lib/trend-export.js index.html app.js
-            & git commit -m "Refresh Jiuqian validated data $stamp" -- data lib/version.js lib/bubble-view.js lib/competition-worker.js lib/report-view.js lib/report-worker.js lib/trend-view.js lib/trend-worker.js lib/trend-chart.js lib/trend-export.js index.html app.js
+            & git add -- lib/version.js lib/bubble-view.js lib/competition-worker.js lib/report-view.js lib/report-worker.js lib/trend-view.js lib/trend-worker.js lib/trend-chart.js lib/trend-export.js lib/trend-selection.js lib/trend-prices.js index.html app.js
+            & git commit -m "Refresh Jiuqian validated data $stamp" -- data lib/version.js lib/bubble-view.js lib/competition-worker.js lib/report-view.js lib/report-worker.js lib/trend-view.js lib/trend-worker.js lib/trend-chart.js lib/trend-export.js lib/trend-selection.js lib/trend-prices.js index.html app.js
             if($LASTEXITCODE -ne 0){throw 'Commit failed'}
             & git push origin main
             if($LASTEXITCODE -ne 0){throw 'Push failed'}

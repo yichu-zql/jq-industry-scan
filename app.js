@@ -1,5 +1,5 @@
-import { selectedPeriod, setYearRange } from "./lib/time-range.js?v=2.4.0";
-import { mountDistribution } from "./lib/bubble-view.js?v=2.4.0";
+import { selectedPeriod, setYearRange } from "./lib/time-range.js?v=2.5.0";
+import { mountDistribution } from "./lib/bubble-view.js?v=2.5.0";
 import {
   spark,
   segments,
@@ -10,7 +10,7 @@ import {
   installViewportTableHeaders,
   COLORS,
   brandColor,
-} from "./lib/presentation.js?v=2.4.0";
+} from "./lib/presentation.js?v=2.5.0";
 const VERSION = document.querySelector('meta[name="app-version"]').content;
 import {
   PLATFORMS,
@@ -210,7 +210,7 @@ const views = [
   ["competition", "竞品格局"],
   ["brand", "品牌深挖"],
   ["method", "口径与数据"],
-  ["trends", "行业趋势速览"],
+  ["trends", "自定义行业速览"],
 ];
 let brandCategoryIndex = null;
 let manifest,
@@ -1343,7 +1343,7 @@ async function render() {
     else if (S.view === "competition") await competitionReference(t);
     else if (S.view === "brand") await brandReference(t);
     else if (S.view === "trends") {
-      trendsModule = await import("./lib/trend-view.js?v=2.4.0");
+      trendsModule = await import("./lib/trend-view.js?v=2.5.0");
       if (t !== token) return;
       trendsModule.mountTrends({
         element: $("main"),
@@ -1391,7 +1391,7 @@ function resetLocal() {
 document.addEventListener("table-page", () => addBarsToNew());
 document.addEventListener("click", (e) => {
   if (e.target.closest("#one-page-open")) {
-    import("./lib/report-view.js?v=2.4.0")
+    import("./lib/report-view.js?v=2.5.0")
       .then(({ openBrief }) =>
         openBrief({
           manifest,
